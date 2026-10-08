@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import ClientForm from '../components/ClientForm';
 import { Badge, Field, Icon, Modal, Notice, NumInput, PageHeader } from '../components/ui';
 import { db } from '../db/db';
-import { useClients, usePaiements, useProfile } from '../db/hooks';
+import { useClients, useLicense, usePaiements, useProfile } from '../db/hooks';
+import { canFinalize } from '../lib/license';
 import { ACTIVITES, MOYENS, type ActivityKind, type Doc, type DocType, type Ligne, type MoyenPaiement } from '../db/types';
 import { isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
@@ -19,6 +20,7 @@ export default function DocumentEditor() {
   const { profile, loaded } = useProfile();
   const clients = useClients();
   const paiements = usePaiements();
+  const licence = useLicense();
   const isNew = !id;
   const newType: DocType = params.get('type') === 'devis' ? 'devis' : 'facture';
 
@@ -27,7 +29,7 @@ export default function DocumentEditor() {
   docRef.current = doc;
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ReactNode>(null);
   const [clientModal, setClientModal] = useState(false);
   const [payModal, setPayModal] = useState(false);
   const [linked, setLinked] = useState<Doc | null>(null);
@@ -95,7 +97,7 @@ export default function DocumentEditor() {
   const update = (patch: Partial<Doc>) => {
     setDoc((d) => (d ? { ...d, ...patch } : d));
     setDirty(true);
-    setError('');
+    setError(null);
   };
   const updateLigne = (lid: string, patch: Partial<Ligne>) =>
     update({ lignes: doc.lignes.map((l) => (l.id === lid ? { ...l, ...patch } : l)) });
@@ -112,7 +114,18 @@ export default function DocumentEditor() {
     return '';
   }
 
+  const bloque = licence.status !== 'loading' && !canFinalize(licence);
+
   async function onFinaliser() {
+    if (!canFinalize(licence)) {
+      setError(
+        <>
+          {licence.status === 'trial_over' ? "La période d'essai est terminée" : 'Aucune licence valide'} : la finalisation des documents nécessite une licence.{' '}
+          <Link to="/parametres?tab=licence">Activer une licence</Link>
+        </>,
+      );
+      return;
+    }
     const err = validate();
     if (err) {
       setError(err);
@@ -220,6 +233,14 @@ export default function DocumentEditor() {
       />
 
       {error && <div style={{ marginBottom: 14 }}><Notice tone="critical">{error}</Notice></div>}
+      {bloque && !locked && !error && (
+        <div style={{ marginBottom: 14 }}>
+          <Notice tone="warning">
+            Vous pouvez préparer ce brouillon, mais sa finalisation (numéro définitif, envoi) nécessite une licence active.{' '}
+            <Link to="/parametres?tab=licence">Activer une licence</Link>
+          </Notice>
+        </div>
+      )}
       {locked && (
         <div style={{ marginBottom: 14 }}>
           <Notice>

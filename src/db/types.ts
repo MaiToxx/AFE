@@ -119,6 +119,12 @@ export interface Paiement {
   libelle: string;
 }
 
+/** Réglages techniques (clé de licence, début d'essai…), conservés même après « Tout effacer ». */
+export interface Setting {
+  key: string;
+  value: string;
+}
+
 export interface Bareme {
   annee: number;
   cotisations: Record<ActivityKind, number>; // % du CA

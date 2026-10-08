@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTheme, type Theme } from '../components/Layout';
-import { Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
-import { clearAll, db, exportBackup, importBackup, saveProfile } from '../db/db';
-import { useBaremes, useDocuments, useProfile } from '../db/hooks';
+import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
+import { clearAll, db, deleteSetting, exportBackup, importBackup, saveProfile, setSetting } from '../db/db';
+import { useBaremes, useDocuments, useLicense, useProfile } from '../db/hooks';
+import { evaluate, PURCHASE_URL, SUPPORT_EMAIL, TRIAL_DAYS, verifyKey, type LicenseStatus } from '../lib/license';
 import { ACTIVITES, NATURES, type ActivityKind, type Bareme, type Nature, type Profile } from '../db/types';
 import { defaultBaremeFor, pickBareme } from '../lib/bareme';
 import { acreEnd } from '../lib/cotisations';
@@ -11,11 +13,18 @@ import { loadDemo } from '../lib/demo';
 import { isTauri, saveTextFile } from '../lib/desktop';
 import { fmtDate } from '../lib/format';
 
-type Tab = 'profil' | 'facturation' | 'bareme' | 'donnees' | 'apparence';
+type Tab = 'profil' | 'facturation' | 'bareme' | 'donnees' | 'licence' | 'apparence';
+const TAB_VALUES: Tab[] = ['profil', 'facturation', 'bareme', 'donnees', 'licence', 'apparence'];
+const isTab = (t: string | null): t is Tab => !!t && (TAB_VALUES as string[]).includes(t);
 
 export default function Parametres() {
   const { profile, loaded, exists } = useProfile();
-  const [tab, setTab] = useState<Tab>('profil');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => (isTab(params.get('tab')) ? (params.get('tab') as Tab) : 'profil'));
+  useEffect(() => {
+    const t = params.get('tab');
+    if (isTab(t)) setTab(t);
+  }, [params]);
   const [form, setForm] = useState<Profile>(profile);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -43,6 +52,7 @@ export default function Parametres() {
     { value: 'facturation', label: 'Documents' },
     { value: 'bareme', label: 'Barème URSSAF' },
     { value: 'donnees', label: 'Données' },
+    { value: 'licence', label: 'Licence' },
     { value: 'apparence', label: 'Apparence' },
   ];
 
@@ -76,8 +86,145 @@ export default function Parametres() {
       {tab === 'facturation' && <FacturationTab form={form} set={set} />}
       {tab === 'bareme' && <BaremeTab />}
       {tab === 'donnees' && <DonneesTab />}
+      {tab === 'licence' && <LicenceTab />}
       {tab === 'apparence' && <ApparenceTab />}
     </>
+  );
+}
+
+function LicenceEtat({ lic }: { lic: LicenseStatus }) {
+  switch (lic.status) {
+    case 'loading':
+      return <p className="muted">Vérification…</p>;
+    case 'trial':
+      return (
+        <>
+          <p><Badge tone="info">Période d'essai</Badge></p>
+          <p className="text-2" style={{ marginTop: 8 }}>
+            Toutes les fonctions sont disponibles encore {lic.daysLeft} jour{lic.daysLeft > 1 ? 's' : ''} (jusqu'au {fmtDate(lic.endsOn)}).
+            Ensuite, vos données resteront consultables et exportables, mais la finalisation de nouveaux devis et factures nécessitera une licence.
+          </p>
+        </>
+      );
+    case 'trial_over':
+      return (
+        <>
+          <p><Badge tone="critical">Essai terminé</Badge></p>
+          <p className="text-2" style={{ marginTop: 8 }}>
+            Les {TRIAL_DAYS} jours d'essai sont écoulés. Vos données restent accessibles (consultation, PDF des documents existants, export),
+            mais la finalisation de nouveaux documents est désactivée jusqu'à l'activation d'une licence.
+          </p>
+        </>
+      );
+    case 'invalid':
+      return (
+        <>
+          <p><Badge tone="critical">Clé invalide</Badge></p>
+          <p className="text-2" style={{ marginTop: 8 }}>{lic.reason}</p>
+        </>
+      );
+    case 'licensed':
+    case 'expired':
+    case 'unsupported': {
+      const l = lic.license;
+      return (
+        <>
+          <p>
+            {lic.status === 'licensed' && <Badge tone="good">Licence active</Badge>}
+            {lic.status === 'expired' && <Badge tone="critical">Abonnement expiré le {fmtDate(l.expires ?? '')}</Badge>}
+            {lic.status === 'unsupported' && <Badge tone="critical">Version {__APP_VERSION__} non couverte</Badge>}
+          </p>
+          <dl className="kv" style={{ marginTop: 10 }}>
+            <dt>Titulaire</dt><dd>{l.name}</dd>
+            <dt>E-mail</dt><dd>{l.email}</dd>
+            <dt>Type</dt><dd>{l.plan === 'abonnement' ? `Abonnement jusqu'au ${fmtDate(l.expires ?? '')}` : 'Licence perpétuelle'}{l.maxMajor !== undefined ? ` · mises à jour incluses jusqu'à la version ${l.maxMajor}.x` : ''}</dd>
+            <dt>N° de licence</dt><dd className="tnum">{l.id}</dd>
+            <dt>Émise le</dt><dd>{fmtDate(l.issued)}</dd>
+          </dl>
+          {lic.status === 'unsupported' && (
+            <p className="text-2 small" style={{ marginTop: 8 }}>Cette licence couvre les versions jusqu'à {l.maxMajor}.x. Contactez {SUPPORT_EMAIL} pour une mise à niveau.</p>
+          )}
+        </>
+      );
+    }
+  }
+}
+
+function LicenceTab() {
+  const lic = useLicense();
+  const [key, setKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone?: 'warning' | 'critical'; text: string } | null>(null);
+  const hasKey = 'license' in lic || lic.status === 'invalid';
+
+  async function activer() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const r = await verifyKey(key);
+      if (!r.ok) {
+        setMsg({ tone: 'critical', text: r.reason });
+        return;
+      }
+      const ev = evaluate(r.payload);
+      if (ev.status === 'expired') {
+        setMsg({ tone: 'critical', text: `Cette licence a expiré le ${fmtDate(r.payload.expires ?? '')}.` });
+        return;
+      }
+      if (ev.status === 'unsupported') {
+        setMsg({ tone: 'critical', text: `Cette licence couvre les versions jusqu'à ${r.payload.maxMajor}.x ; vous utilisez la version ${__APP_VERSION__}.` });
+        return;
+      }
+      await setSetting('licenseKey', key.replace(/\s+/g, ''));
+      setKey('');
+      setMsg({ text: `Licence activée pour ${r.payload.name}. Merci pour votre confiance !` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function retirer() {
+    if (!confirm('Retirer la licence de cet appareil ? Vous pourrez la réactiver avec la même clé.')) return;
+    await deleteSetting('licenseKey');
+    setMsg({ text: 'Licence retirée.' });
+  }
+
+  return (
+    <div className="stack">
+      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      <div className="card">
+        <div className="card-head">
+          <h3>État de la licence</h3>
+          {hasKey && <button type="button" className="btn ghost sm" onClick={retirer}>Retirer la licence</button>}
+        </div>
+        <LicenceEtat lic={lic} />
+      </div>
+      <div className="card">
+        <h3>Activer une licence</h3>
+        <p className="small text-2" style={{ margin: '4px 0 12px' }}>Collez la clé reçue après votre achat (elle commence par « AFE1- »). L'activation se fait hors ligne, aucune donnée n'est envoyée.</p>
+        <textarea
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          rows={4}
+          placeholder="AFE1-…"
+          spellCheck={false}
+          style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12.5 }}
+          aria-label="Clé de licence"
+        />
+        <div className="actions" style={{ marginTop: 10 }}>
+          <button type="button" className="btn primary" onClick={activer} disabled={busy || !key.trim()}>
+            <Icon name="check" /> Activer
+          </button>
+        </div>
+      </div>
+      <div className="card">
+        <h3>Obtenir une licence</h3>
+        <p className="small text-2" style={{ margin: '4px 0 0' }}>
+          Achat et informations : <a href={PURCHASE_URL} target="_blank" rel="noreferrer">{PURCHASE_URL}</a> · assistance : <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
+          La licence est personnelle, valable sur tous vos appareils, et incluse dans vos sauvegardes.
+        </p>
+      </div>
+    </div>
   );
 }
 

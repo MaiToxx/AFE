@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
+import { useLicense } from '../db/hooks';
 import { Icon, type IconName } from './ui';
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -47,6 +48,45 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/parametres', label: 'Paramètres', icon: 'settings' },
 ];
 
+function LicenceBadge() {
+  const lic = useLicense();
+  const to = '/parametres?tab=licence';
+  switch (lic.status) {
+    case 'trial':
+      return (
+        <Link to={to} className={`lic${lic.daysLeft <= 3 ? ' warning' : ''}`} title="Période d'essai">
+          <Icon name="info" />
+          <span>Essai : {lic.daysLeft} jour{lic.daysLeft > 1 ? 's' : ''} restant{lic.daysLeft > 1 ? 's' : ''}</span>
+        </Link>
+      );
+    case 'trial_over':
+      return (
+        <Link to={to} className="lic critical">
+          <Icon name="alert" />
+          <span>Essai terminé — activer</span>
+        </Link>
+      );
+    case 'expired':
+    case 'unsupported':
+    case 'invalid':
+      return (
+        <Link to={to} className="lic critical">
+          <Icon name="alert" />
+          <span>Licence à vérifier</span>
+        </Link>
+      );
+    case 'licensed':
+      return (
+        <Link to={to} className="lic good" title={`Licence ${lic.license.id}`}>
+          <Icon name="checkCircle" />
+          <span>Licence : {lic.license.name}</span>
+        </Link>
+      );
+    default:
+      return null;
+  }
+}
+
 export default function Layout() {
   const [theme, setTheme] = useTheme();
   const dark = isDark(theme);
@@ -71,11 +111,13 @@ export default function Layout() {
           </NavLink>
         ))}
         <div className="nav-footer">
+          <LicenceBadge />
           <button type="button" className="btn ghost sm" onClick={() => setTheme(dark ? 'light' : 'dark')} aria-label={dark ? 'Passer en thème clair' : 'Passer en thème sombre'}>
             <Icon name={dark ? 'sun' : 'moon'} size={16} />
             <span>{dark ? 'Clair' : 'Sombre'}</span>
           </button>
           <div className="hint">Fonctionne hors ligne. Vos données restent sur cet appareil.</div>
+          <div className="version">AFE v{__APP_VERSION__}</div>
         </div>
       </nav>
       <main className="main">

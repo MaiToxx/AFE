@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { BarChart, Meter, StatTile } from '../components/charts';
-import { Badge, Icon, PageHeader, Seg } from '../components/ui';
-import { useBaremes, useClients, useDocuments, usePaiements, useProfile } from '../db/hooks';
+import { Badge, Icon, Notice, PageHeader, Seg } from '../components/ui';
+import { useBaremes, useClients, useDocuments, useLicense, usePaiements, useProfile } from '../db/hooks';
 import { ACTIVITES, isTVAVente, isVente, type ActivityKind, type Doc } from '../db/types';
 import { pickBareme } from '../lib/bareme';
 import { monthOf, todayISO, yearOf } from '../lib/dates';
@@ -22,6 +22,7 @@ export default function Dashboard() {
   const paiements = usePaiements();
   const baremes = useBaremes();
   const clients = useClients();
+  const licence = useLicense();
 
   useEffect(() => {
     if (params.get('demo') === '1' && loaded && !exists && docs.length === 0 && !demoRequested) {
@@ -97,6 +98,15 @@ export default function Dashboard() {
           </>
         }
       />
+
+      {(licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid') && (
+        <div style={{ marginBottom: 18 }}>
+          <Notice tone="critical">
+            {licence.status === 'trial_over' ? "Période d'essai terminée." : 'Licence expirée ou invalide.'} Vos données restent accessibles, mais la finalisation de nouveaux devis et factures est désactivée.{' '}
+            <Link to="/parametres?tab=licence">Activer une licence</Link>
+          </Notice>
+        </div>
+      )}
 
       {vide && (
         <div className="card" style={{ marginBottom: 18 }}>

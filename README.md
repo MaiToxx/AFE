@@ -62,6 +62,16 @@ Dans la version bureau, l'export de sauvegarde ouvre une boîte « Enregistrer s
 le service worker PWA est désactivé (inutile hors navigateur). Les données sont stockées dans
 le profil WebView2 de l'application (`%LOCALAPPDATA%\fr.afe.desktop`).
 
+## Licences (vente du logiciel)
+
+L'application se vérifie **hors ligne** avec des clés de licence signées (ECDSA P-256) :
+14 jours d'essai complet, puis la finalisation de nouveaux devis/factures requiert une licence
+(les données restent toujours consultables et exportables). L'outillage vendeur est dans
+[`scripts/license/`](scripts/license/README.md) : `keygen.mjs` (une fois), puis
+`issue.mjs --name "…" --email …` après chaque vente. **`scripts/license/private.jwk` est secret
+et n'est jamais commité** — sauvegardez-le hors ligne. Modifiez `PURCHASE_URL` et
+`SUPPORT_EMAIL` dans `src/lib/license.ts`.
+
 ## Démonstration et export PDF en ligne de commande
 
 - `http://localhost:5173/#/?demo=1` charge le jeu de démonstration sur une base vide (pratique

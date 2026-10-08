@@ -1,8 +1,35 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_PROFILE, db } from './db';
-import type { Bareme, Client, Doc, Paiement, Profile } from './types';
+import type { Bareme, Client, Doc, Paiement, Profile, Setting } from './types';
 import { DEFAULT_BAREMES } from '../lib/bareme';
+import { todayISO } from '../lib/dates';
+import { evaluate, trialStatus, verifyKey, type LicenseStatus } from '../lib/license';
+
+/** Statut de licence courant (essai, licence valide, expirée…), recalculé à chaque changement en base. */
+export function useLicense(): LicenseStatus {
+  const settings = useLiveQuery(() => db.settings.toArray(), [], null as Setting[] | null);
+  const [state, setState] = useState<LicenseStatus>({ status: 'loading' });
+  const licenseKey = settings?.find((s) => s.key === 'licenseKey')?.value ?? '';
+  const trialStart = settings?.find((s) => s.key === 'trialStart')?.value ?? '';
+  const pending = settings === null;
+  useEffect(() => {
+    if (pending) return;
+    let cancelled = false;
+    const today = todayISO();
+    if (!licenseKey) {
+      setState(trialStart ? trialStatus(trialStart, today) : { status: 'loading' });
+      return;
+    }
+    verifyKey(licenseKey).then((r) => {
+      if (!cancelled) setState(r.ok ? evaluate(r.payload, today) : { status: 'invalid', reason: r.reason });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pending, licenseKey, trialStart]);
+  return state;
+}
 
 /**
  * Profil fusionné avec les valeurs par défaut. `loaded` passe à true une fois IndexedDB lu.

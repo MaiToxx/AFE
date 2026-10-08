@@ -137,6 +137,13 @@ button { cursor: pointer; }
 .nav a.item.active { background: var(--accent-wash); color: var(--accent-ink); }
 .nav a.item svg { width: 18px; height: 18px; flex: none; }
 .nav-footer { margin-top: auto; display: grid; gap: 8px; padding: 8px; font-size: 12px; color: var(--muted); }
+.lic { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 5px 9px; border-radius: 6px; background: var(--surface-2); color: var(--text-2); text-decoration: none; }
+.lic:hover { text-decoration: none; filter: brightness(0.97); }
+.lic svg { width: 14px; height: 14px; flex: none; }
+.lic.good { background: rgba(12, 163, 12, 0.12); color: var(--good-text); }
+.lic.warning { background: rgba(250, 178, 25, 0.16); color: var(--warning-text); }
+.lic.critical { background: rgba(208, 59, 59, 0.12); color: var(--critical-text); }
+.nav-footer .version { font-size: 11px; }
 .main { padding: 26px 32px 48px; min-width: 0; }
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
 .page-header p { color: var(--text-2); margin-top: 3px; }
@@ -153,8 +160,9 @@ button { cursor: pointer; }
   .brand-sub { display: none; }
   .nav a.item { padding: 8px 10px; white-space: nowrap; }
   .nav a.item span { display: none; }
-  .nav-footer { margin-top: 0; margin-left: auto; padding: 0; }
-  .nav-footer .hint { display: none; }
+  .nav-footer { margin-top: 0; margin-left: auto; padding: 0; display: flex; align-items: center; gap: 6px; }
+  .nav-footer .hint, .nav-footer .version { display: none; }
+  .lic span { display: none; }
   .main { padding: 18px 16px 40px; }
 }
 

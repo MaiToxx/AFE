@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
-import { ensureBaremes } from './db/db';
+import { ensureBaremes, ensureTrialStart } from './db/db';
 import Clients from './pages/Clients';
 import Cotisations from './pages/Cotisations';
 import Dashboard from './pages/Dashboard';
@@ -13,6 +13,7 @@ import Parametres from './pages/Parametres';
 export default function App() {
   useEffect(() => {
     void ensureBaremes();
+    void ensureTrialStart();
   }, []);
   return (
     <HashRouter>
