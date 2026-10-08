@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AFE",
+  "version": "0.1.0",
+  "identifier": "fr.afe.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AFE — Auto-Entrepreneur",
+        "width": 1240,
+        "height": 820,
+        "minWidth": 720,
+        "minHeight": 560,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "Tableau de bord pour auto-entrepreneurs",
+    "longDescription": "Devis, factures, simulateur de cotisations URSSAF et suivi du chiffre d'affaires. Fonctionne hors ligne, données stockées localement.",
+    "windows": {
+      "nsis": {
+        "languages": ["French"],
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}

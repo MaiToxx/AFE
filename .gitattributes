@@ -1,0 +1,6 @@
+# Fins de ligne LF dans le dépôt et la copie de travail (outillage Node/Vite/Cargo).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.pdf binary

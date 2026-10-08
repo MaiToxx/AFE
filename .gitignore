@@ -1,0 +1,6 @@
+node_modules
+dist
+dev-dist
+exemples/
+*.local
+.DS_Store
