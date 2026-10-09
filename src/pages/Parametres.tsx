@@ -15,6 +15,7 @@ import { loadDemo } from '../lib/demo';
 import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
 import { dossierSauvegardes, ouvrirDossierSauvegardes, sauvegardeAutomatique } from '../lib/autoBackup';
 import { verifierMiseAJour } from '../lib/updater';
+import { sauvegarderCleFichier, supprimerCleFichier } from '../lib/licenseStore';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { fmtDate, fmtEUR } from '../lib/format';
 
@@ -231,6 +232,7 @@ function LicenceTab() {
         return;
       }
       await setSetting('licenseKey', key.replace(/\s+/g, ''));
+      await sauvegarderCleFichier(key.replace(/\s+/g, ''));
       setKey('');
       setMsg({ text: `Licence activée pour ${r.payload.name}. Merci pour votre confiance !` });
     } finally {
@@ -241,6 +243,7 @@ function LicenceTab() {
   async function retirer() {
     if (!confirm('Retirer la licence de cet appareil ? Vous pourrez la réactiver avec la même clé.')) return;
     await deleteSetting('licenseKey');
+    await supprimerCleFichier();
     setMsg({ text: 'Licence retirée.' });
   }
 
@@ -256,7 +259,7 @@ function LicenceTab() {
       </div>
       <div className="card">
         <h3>Activer une licence</h3>
-        <p className="small text-2" style={{ margin: '4px 0 12px' }}>Collez la clé reçue après votre achat (elle commence par « AFE1- »). L'activation se fait hors ligne, aucune donnée n'est envoyée.</p>
+        <p className="small text-2" style={{ margin: '4px 0 12px' }}>Collez la clé reçue après votre achat (elle commence par « AFE1- »). L'activation se fait hors ligne, aucune donnée n'est envoyée.{isTauri ? ' La clé est aussi conservée dans le dossier de l’application et restaurée automatiquement si nécessaire.' : ''}</p>
         <textarea
           value={key}
           onChange={(e) => setKey(e.target.value)}
@@ -553,7 +556,7 @@ function SauvegardeAutoCard() {
     <div className="card">
       <h3>Sauvegarde automatique</h3>
       <p className="small text-2" style={{ margin: '4px 0 8px' }}>
-        Une copie JSON de vos données est enregistrée au lancement (une fois par jour, les 10 dernières sont conservées){dossier ? ` dans ${dossier}` : ''}.
+        Une copie JSON de vos données est enregistrée au lancement puis toutes les 10 minutes (un fichier par jour, les 10 derniers conservés){dossier ? ` dans ${dossier}` : ''}.
         {last?.value ? ` Dernière sauvegarde : ${fmtDate(last.value)}.` : ' Aucune sauvegarde pour l’instant.'}
       </p>
       <Check label="Activer la sauvegarde automatique" checked={profile.sauvegardeAuto} onChange={(v) => void saveProfile({ sauvegardeAuto: v })} />

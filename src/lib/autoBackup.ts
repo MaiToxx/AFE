@@ -8,10 +8,14 @@ import { isTauri } from './desktop';
 const DIR = 'sauvegardes';
 const KEEP = 10;
 
-export async function sauvegardeAutomatique(profile: Profile): Promise<string | null> {
+/**
+ * Écrit la sauvegarde du jour (un fichier par jour, réécrit à chaque appel).
+ * Sans `force`, ne s'exécute qu'une fois par jour (premier lancement).
+ */
+export async function sauvegardeAutomatique(profile: Profile, force = false): Promise<string | null> {
   if (!isTauri || !profile.sauvegardeAuto) return null;
   const today = todayISO();
-  if ((await getSetting('lastAutoBackup')) === today) return null;
+  if (!force && (await getSetting('lastAutoBackup')) === today) return null;
   const fs = await import('@tauri-apps/plugin-fs');
   const opts = { baseDir: fs.BaseDirectory.AppData };
   await fs.mkdir(DIR, { ...opts, recursive: true });
