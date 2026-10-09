@@ -1,6 +1,6 @@
 [package]
 name = "afe"
-version = "0.2.0"
+version = "0.2.1"
 description = "Tableau de bord pour auto-entrepreneurs : devis, factures, cotisations, chiffre d'affaires."
 authors = ["AFE"]
 edition = "2021"
