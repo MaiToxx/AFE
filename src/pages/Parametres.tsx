@@ -411,6 +411,18 @@ function FacturationTab({ form, set }: { form: Profile; set: (p: Partial<Profile
               <span className="small tnum text-2">{form.couleur}</span>
             </div>
           </Field>
+          <div className="field">
+            <span className="label">Style des documents</span>
+            <Seg
+              value={form.themeDocument}
+              onChange={(themeDocument) => set({ themeDocument })}
+              options={[
+                { value: 'clair', label: 'Clair' },
+                { value: 'sombre', label: 'Sombre' },
+              ]}
+            />
+            <span className="help">Le style sombre (fond anthracite, texte clair) convient à l'envoi en PDF ; sur papier il consomme beaucoup d'encre. Le logo est posé sur un cartouche blanc.</span>
+          </div>
         </div>
       </div>
       <div className="form-section">

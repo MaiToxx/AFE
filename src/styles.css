@@ -388,6 +388,8 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
   background: #fff; color: #111; box-shadow: 0 4px 30px rgba(0, 0, 0, 0.12);
   font-size: 10.5pt; line-height: 1.4; display: flex; flex-direction: column;
   color-scheme: light;
+  /* Imprime les fonds (en-tête de tableau, style sombre) sans dépendre de l'option « graphiques d'arrière-plan ». */
+  print-color-adjust: exact; -webkit-print-color-adjust: exact;
 }
 .sheet-head { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 26px; }
 .sheet-logo { max-height: 64px; max-width: 200px; object-fit: contain; }
@@ -415,6 +417,20 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
 .sheet .mentions { font-size: 8.8pt; color: #333; display: grid; gap: 7px; }
 .sheet .mentions h4 { font-size: 9pt; color: #111; margin-bottom: 1px; }
 .sheet-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid #ddd; font-size: 8pt; color: #666; text-align: center; }
+.sheet .meta { font-size: 9.5pt; color: #333; }
+.sheet .vide { color: #999; }
+.sheet .acquittee { margin-bottom: 14px; font-weight: 600; color: #2a7a2a; }
+
+/* Style sombre des documents : fond anthracite, texte clair, accent conservé. */
+.sheet.sheet-dark { background: #151515; color: #f2f2ef; color-scheme: dark; }
+.sheet-dark .sheet-emitter, .sheet-dark .sheet-title .dates, .sheet-dark .meta, .sheet-dark .mentions, .sheet-dark .sheet-box, .sheet-dark .totals-block td:first-child { color: #c9c9c2; }
+.sheet-dark .sheet-emitter strong, .sheet-dark .sheet-box strong, .sheet-dark .mentions h4, .sheet-dark .sheet-title .num, .sheet-dark table.lines td, .sheet-dark .totals-block td:last-child { color: #ffffff; }
+.sheet-dark .sheet-box .lbl, .sheet-dark .sheet-foot, .sheet-dark .vide { color: #8f8f88; }
+.sheet-dark table.lines td { border-bottom-color: #2e2e2b; }
+.sheet-dark .sheet-foot { border-top-color: #333330; }
+.sheet-dark .signature div { border-color: #555; color: #a5a59f; }
+.sheet-dark .acquittee { color: #6fd36f; }
+.sheet-dark .sheet-logo { background: #fff; border-radius: 4px; padding: 4px; }
 .sheet-foot .pays { margin-top: 2px; }
 .sheet .signature { margin-top: 18px; display: flex; justify-content: flex-end; }
 .sheet .signature div { width: 230px; border: 1px dashed #bbb; padding: 8px 10px 48px; font-size: 8.5pt; color: #666; }

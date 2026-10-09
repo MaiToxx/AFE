@@ -71,7 +71,7 @@ export default function DocumentPrint() {
         </button>
       </div>
 
-      <article className="sheet" style={{ ['--doc-accent' as string]: profile.couleur || '#2a78d6' }}>
+      <article className={`sheet${profile.themeDocument === 'sombre' ? ' sheet-dark' : ''}`} style={{ ['--doc-accent' as string]: profile.couleur || '#2a78d6' }}>
         <header className="sheet-head">
           <div className="sheet-emitter">
             {profile.logo && <img className="sheet-logo" src={profile.logo} alt="" style={{ display: 'block', marginBottom: 10 }} />}
@@ -112,7 +112,7 @@ export default function DocumentPrint() {
                 {client.siret && <div>SIRET : {client.siret}</div>}
               </>
             ) : (
-              <em style={{ color: '#999' }}>Aucun client sélectionné</em>
+              <em className="vide">Aucun client sélectionné</em>
             )}
           </div>
         </section>
@@ -130,7 +130,7 @@ export default function DocumentPrint() {
           </p>
         )}
         {(periode || doc.bonCommande || doc.adresseLivraison || isFacture || isAvoir) && (
-          <p className="sheet-objet" style={{ fontSize: '9.5pt', color: '#333' }}>
+          <p className="sheet-objet meta">
             {periode && <span>{periode}</span>}
             {periode && (isFacture || isAvoir) && ' · '}
             {(isFacture || isAvoir) && <span>Catégorie d'opération : {categorieOperation(doc.activite)}</span>}
@@ -185,7 +185,7 @@ export default function DocumentPrint() {
         </div>
 
         {isFacture && doc.statut === 'payee' && dernierPaiement && (
-          <p style={{ marginBottom: 14, fontWeight: 600, color: '#2a7a2a' }}>Facture acquittée le {fmtDate(dernierPaiement.date)}.</p>
+          <p className="acquittee">Facture acquittée le {fmtDate(dernierPaiement.date)}.</p>
         )}
 
         <section className="mentions">

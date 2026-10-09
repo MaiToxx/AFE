@@ -69,6 +69,7 @@ export const DEFAULT_PROFILE: Profile = {
   validiteDevisJours: 30,
   objectifCA: 0,
   sauvegardeAuto: true,
+  themeDocument: 'clair',
   conditionsPaiement: 'Paiement à 30 jours par virement bancaire.',
   mentionsPied: '',
   iban: '',

@@ -51,6 +51,7 @@ export interface Profile {
   validiteDevisJours: number;
   objectifCA: number; // objectif de CA annuel (0 = non défini)
   sauvegardeAuto: boolean; // version bureau : export JSON automatique au lancement
+  themeDocument: 'clair' | 'sombre'; // style des devis/factures/avoirs imprimés
   conditionsPaiement: string;
   mentionsPied: string;
   iban: string;
