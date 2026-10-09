@@ -82,6 +82,7 @@ export default function Dashboard() {
   if (sum(prev) > 0) chartSeries.push({ name: String(year - 1), color: 'var(--series-2)', values: prev });
 
   const vide = loaded && docs.length === 0 && paiements.length === 0;
+  const recDrafts = docs.filter((d) => d.recurrenceId && d.statut === 'brouillon');
 
   return (
     <>
@@ -110,6 +111,15 @@ export default function Dashboard() {
               </span>
               <BuyLicenceButton small />
             </div>
+          </Notice>
+        </div>
+      )}
+
+      {recDrafts.length > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <Notice>
+            {recDrafts.length} facture{recDrafts.length > 1 ? 's' : ''} récurrente{recDrafts.length > 1 ? 's' : ''} générée{recDrafts.length > 1 ? 's' : ''} en brouillon :{' '}
+            <Link to="/documents?type=facture">à vérifier et finaliser</Link>.
           </Notice>
         </div>
       )}

@@ -51,3 +51,16 @@ export function shiftMonth(annee: number, mois: number, n: number): { annee: num
 export function isValidISO(iso: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) && !Number.isNaN(parseISO(iso).getTime());
 }
+
+/** Ajoute n mois en conservant le jour (ramené au dernier jour du mois si besoin). */
+export function addMonths(iso: string, n: number): string {
+  const d = parseISO(iso);
+  const { annee, mois } = shiftMonth(d.getFullYear(), d.getMonth() + 1, n);
+  const day = Math.min(d.getDate(), lastDayOfMonth(annee, mois));
+  return `${annee}-${pad(mois)}-${pad(day)}`;
+}
+
+/** Nombre de jours entre deux dates ISO (positif si `b` est après `a`). */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((parseISO(b).getTime() - parseISO(a).getTime()) / 86_400_000);
+}

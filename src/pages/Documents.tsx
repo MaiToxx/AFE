@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge, Empty, Icon, PageHeader } from '../components/ui';
-import { useClients, useDocuments, usePaiements } from '../db/hooks';
+import RecurrencesList from '../components/RecurrencesList';
+import { useClients, useDocuments, usePaiements, useRelances } from '../db/hooks';
 import type { Doc, DocType } from '../db/types';
 import { todayISO } from '../lib/dates';
 import { montantPaye, statutInfo, supprimerDoc } from '../lib/documents';
@@ -39,7 +40,9 @@ const LABELS: Record<DocType, { onglet: string; vide: string; nouveau: string; d
 export default function Documents() {
   const [params, setParams] = useSearchParams();
   const t = params.get('type');
-  const type: DocType = t === 'devis' || t === 'avoir' ? t : 'facture';
+  const tab: DocType | 'recurrente' = t === 'devis' || t === 'avoir' || t === 'recurrente' ? t : 'facture';
+  const type: DocType = tab === 'recurrente' ? 'facture' : tab;
+  const relances = useRelances();
   const navigate = useNavigate();
   const docs = useDocuments();
   const paiements = usePaiements();
@@ -65,7 +68,7 @@ export default function Documents() {
 
   const total = list.reduce((s, d) => s + (d.statut === 'annulee' ? 0 : d.totalTTC), 0);
 
-  function switchType(t: DocType) {
+  function switchType(t: DocType | 'recurrente') {
     setParams({ type: t });
     setStatut('tous');
   }
@@ -92,13 +95,17 @@ export default function Documents() {
         }
       />
       <div className="tabs" role="tablist">
-        {(['facture', 'devis', 'avoir'] as DocType[]).map((k) => (
-          <button key={k} type="button" role="tab" aria-selected={type === k} className={type === k ? 'active' : ''} onClick={() => switchType(k)}>
-            {LABELS[k].onglet}
+        {(['facture', 'devis', 'avoir', 'recurrente'] as const).map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => switchType(k)}>
+            {k === 'recurrente' ? 'Récurrentes' : LABELS[k].onglet}
           </button>
         ))}
       </div>
       <div className="card">
+        {tab === 'recurrente' ? (
+          <RecurrencesList />
+        ) : (
+          <>
         <div className="toolbar">
           <input type="text" placeholder="Numéro, client, objet…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Rechercher" />
           <select value={statut} onChange={(e) => setStatut(e.target.value)} aria-label="Filtrer par statut">
@@ -144,6 +151,7 @@ export default function Documents() {
                 {list.map((d) => {
                   const paye = montantPaye(d, paiements);
                   const st = statutInfo(d, paye, today);
+                  const nbRel = relances.filter((r) => r.factureId === d.id).length;
                   return (
                     <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
                       <td className="tnum"><b>{d.numero || <span className="muted">Brouillon</span>}</b></td>
@@ -151,7 +159,10 @@ export default function Documents() {
                       <td>{clientName(d)}</td>
                       <td className="text-2 ellipsis" title={d.objet}>{d.objet || <span className="muted">—</span>}</td>
                       <td className="num">{type === 'avoir' ? `− ${fmtEUR(d.totalTTC)}` : fmtEUR(d.totalTTC)}</td>
-                      <td><Badge tone={st.tone}>{st.label}</Badge></td>
+                      <td>
+                        <Badge tone={st.tone}>{st.label}</Badge>
+                        {nbRel > 0 && d.statut === 'envoyee' && <div className="small muted">relancée ×{nbRel}</div>}
+                      </td>
                       <td className="tnum text-2">{fmtDate(d.dateEcheance)}</td>
                       <td>
                         <div className="row-actions" onClick={(e) => e.stopPropagation()}>
@@ -171,6 +182,8 @@ export default function Documents() {
               </tbody>
             </table>
           </div>
+        )}
+          </>
         )}
       </div>
     </>

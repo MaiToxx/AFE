@@ -2,20 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import BuyLicenceButton from '../components/BuyLicenceButton';
 import { useTheme, type Theme } from '../components/Layout';
+import PrestationForm from '../components/PrestationForm';
 import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
 import { clearAll, db, deleteSetting, exportBackup, importBackup, saveProfile, setSetting } from '../db/db';
-import { useBaremes, useDocuments, useLicense, useProfile } from '../db/hooks';
+import { useBaremes, useCatalogue, useDocuments, useLicense, useProfile } from '../db/hooks';
 import { evaluate, PURCHASE_URL, SUPPORT_EMAIL, TRIAL_DAYS, verifyKey, type LicenseStatus } from '../lib/license';
-import { ACTIVITES, NATURES, type ActivityKind, type Bareme, type Nature, type Profile } from '../db/types';
+import { ACTIVITES, NATURES, type ActivityKind, type Bareme, type Nature, type Prestation, type Profile } from '../db/types';
 import { defaultBaremeFor, pickBareme } from '../lib/bareme';
 import { acreEnd } from '../lib/cotisations';
 import { todayISO, yearOf } from '../lib/dates';
 import { loadDemo } from '../lib/demo';
 import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
-import { fmtDate } from '../lib/format';
+import { fmtDate, fmtEUR } from '../lib/format';
 
-type Tab = 'profil' | 'facturation' | 'bareme' | 'donnees' | 'licence' | 'apparence';
-const TAB_VALUES: Tab[] = ['profil', 'facturation', 'bareme', 'donnees', 'licence', 'apparence'];
+type Tab = 'profil' | 'facturation' | 'catalogue' | 'bareme' | 'donnees' | 'licence' | 'apparence';
+const TAB_VALUES: Tab[] = ['profil', 'facturation', 'catalogue', 'bareme', 'donnees', 'licence', 'apparence'];
 const isTab = (t: string | null): t is Tab => !!t && (TAB_VALUES as string[]).includes(t);
 
 export default function Parametres() {
@@ -53,6 +54,7 @@ export default function Parametres() {
     { value: 'facturation', label: 'Documents' },
     { value: 'bareme', label: 'Barème URSSAF' },
     { value: 'donnees', label: 'Données' },
+    { value: 'catalogue', label: 'Catalogue' },
     { value: 'licence', label: 'Licence' },
     { value: 'apparence', label: 'Apparence' },
   ];
@@ -87,6 +89,7 @@ export default function Parametres() {
       {tab === 'facturation' && <FacturationTab form={form} set={set} />}
       {tab === 'bareme' && <BaremeTab />}
       {tab === 'donnees' && <DonneesTab />}
+      {tab === 'catalogue' && <CatalogueTab tauxTVA={form.tauxTVA} />}
       {tab === 'licence' && <LicenceTab />}
       {tab === 'apparence' && <ApparenceTab />}
     </>
@@ -149,6 +152,54 @@ function LicenceEtat({ lic }: { lic: LicenseStatus }) {
       );
     }
   }
+}
+
+function CatalogueTab({ tauxTVA }: { tauxTVA: number }) {
+  const catalogue = useCatalogue();
+  const [editing, setEditing] = useState<Prestation | null | undefined>(undefined);
+  async function remove(p: Prestation) {
+    if (confirm(`Supprimer « ${p.libelle} » du catalogue ?`)) await db.catalogue.delete(p.id!);
+  }
+  return (
+    <div className="card">
+      <div className="card-head">
+        <div>
+          <h3>Catalogue de prestations</h3>
+          <p className="small text-2">Vos prestations habituelles, insérables en un clic dans un devis ou une facture (bouton « Depuis le catalogue »).</p>
+        </div>
+        <button type="button" className="btn primary sm" onClick={() => setEditing(null)}><Icon name="plus" size={15} /> Ajouter</button>
+      </div>
+      {catalogue.length === 0 ? (
+        <p className="text-2">Aucune prestation pour l'instant. Vous pouvez aussi enregistrer une ligne existante depuis l'éditeur de document (icône « + catalogue »).</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr><th>Libellé</th><th>Description</th><th>Unité</th><th className="num">Prix unitaire HT</th><th className="num">TVA</th><th /></tr>
+            </thead>
+            <tbody>
+              {catalogue.map((p) => (
+                <tr key={p.id} className="clickable" onClick={() => setEditing(p)}>
+                  <td><b>{p.libelle}</b></td>
+                  <td className="text-2 ellipsis" title={p.description}>{p.description || <span className="muted">—</span>}</td>
+                  <td className="text-2">{p.unite}</td>
+                  <td className="num">{fmtEUR(p.prixUnitaire)}</td>
+                  <td className="num">{p.tauxTVA} %</td>
+                  <td>
+                    <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="btn ghost sm icon" onClick={() => setEditing(p)} aria-label="Modifier"><Icon name="pen" size={15} /></button>
+                      <button type="button" className="btn danger sm icon" onClick={() => remove(p)} aria-label="Supprimer"><Icon name="trash" size={15} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <PrestationForm open={editing !== undefined} prestation={editing ?? null} tauxTVA={tauxTVA} onClose={() => setEditing(undefined)} />
+    </div>
+  );
 }
 
 function LicenceTab() {

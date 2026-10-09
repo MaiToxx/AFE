@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useLicense } from '../db/hooks';
+import Automations from './Automations';
 import { Icon, type IconName } from './ui';
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -122,6 +123,7 @@ export default function Layout() {
         </div>
       </nav>
       <main className="main">
+        <Automations />
         <Outlet />
       </main>
     </div>

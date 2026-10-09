@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BuyLicenceButton from '../components/BuyLicenceButton';
+import CatalogueModal from '../components/CatalogueModal';
 import ClientForm from '../components/ClientForm';
+import RecurrenceModal from '../components/RecurrenceModal';
+import RelanceModal, { CANAUX } from '../components/RelanceModal';
 import { Badge, Field, Icon, Modal, Notice, NumInput, PageHeader } from '../components/ui';
 import { db } from '../db/db';
-import { useClients, useLicense, usePaiements, useProfile } from '../db/hooks';
+import { useClients, useLicense, usePaiements, useProfile, useRelances } from '../db/hooks';
 import { canFinalize } from '../lib/license';
-import { ACTIVITES, MOYENS, type ActivityKind, type Doc, type DocType, type Ligne, type MoyenPaiement } from '../db/types';
+import { ACTIVITES, MOYENS, type ActivityKind, type Doc, type DocType, type Ligne, type MoyenPaiement, type Prestation } from '../db/types';
+import { supprimerRelance } from '../lib/relances';
 import { isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
   DOC_DEFAULTS, avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
@@ -34,6 +38,10 @@ export default function DocumentEditor() {
   const [clientModal, setClientModal] = useState(false);
   const [payModal, setPayModal] = useState(false);
   const [refundModal, setRefundModal] = useState(false);
+  const [catalogueModal, setCatalogueModal] = useState(false);
+  const [relanceModal, setRelanceModal] = useState(false);
+  const [recurrenceModal, setRecurrenceModal] = useState(false);
+  const relances = useRelances();
   const [linked, setLinked] = useState<Doc | null>(null);
 
   // Chargement (ou création en mémoire pour un nouveau document).
@@ -110,6 +118,15 @@ export default function DocumentEditor() {
     update({ lignes: doc.lignes.map((l) => (l.id === lid ? { ...l, ...patch } : l)) });
   const removeLigne = (lid: string) => update({ lignes: doc.lignes.filter((l) => l.id !== lid) });
   const addLigne = () => update({ lignes: [...doc.lignes, newLigne(profile.tauxTVA)] });
+  const mesRelances = relances.filter((r) => r.factureId === doc.id).sort((a, b) => a.date.localeCompare(b.date));
+  const addFromCatalogue = (p: Prestation) => {
+    const ligne: Ligne = { ...newLigne(profile.tauxTVA), description: p.description || p.libelle, unite: p.unite, prixUnitaire: p.prixUnitaire, tauxTVA: p.tauxTVA };
+    const seuleLigneVide = doc.lignes.length === 1 && !doc.lignes[0].description.trim() && !doc.lignes[0].prixUnitaire;
+    update({ lignes: seuleLigneVide ? [ligne] : [...doc.lignes, ligne] });
+  };
+  const addToCatalogue = async (l: Ligne) => {
+    await db.catalogue.add({ libelle: l.description.split('\n')[0].slice(0, 80), description: l.description, unite: l.unite, prixUnitaire: l.prixUnitaire, tauxTVA: l.tauxTVA });
+  };
 
   function validate(): string {
     if (!doc!.clientId) return 'Choisissez un client.';
@@ -235,6 +252,11 @@ export default function DocumentEditor() {
                 <Icon name="wallet" /> Encaisser
               </button>
             )}
+            {locked && isFacture && doc.statut === 'envoyee' && (
+              <button type="button" className="btn" onClick={() => setRelanceModal(true)} title="Relancer le client (e-mail pré-rempli, historique)">
+                <Icon name="alert" /> Relancer
+              </button>
+            )}
             {locked && isAvoir && remboursable > 0 && (
               <button type="button" className="btn primary" onClick={() => setRefundModal(true)}>
                 <Icon name="wallet" /> Enregistrer le remboursement
@@ -349,9 +371,14 @@ export default function DocumentEditor() {
             <div className="card-head">
               <h2>Prestations</h2>
               {!locked && (
-                <button type="button" className="btn sm" onClick={addLigne}>
-                  <Icon name="plus" size={15} /> Ajouter une ligne
-                </button>
+                <div className="actions">
+                  <button type="button" className="btn sm" onClick={() => setCatalogueModal(true)}>
+                    <Icon name="table" size={15} /> Depuis le catalogue
+                  </button>
+                  <button type="button" className="btn sm" onClick={addLigne}>
+                    <Icon name="plus" size={15} /> Ajouter une ligne
+                  </button>
+                </div>
               )}
             </div>
             <div className="table-wrap">
@@ -364,7 +391,7 @@ export default function DocumentEditor() {
                     <th style={{ width: 110 }}>Prix unit. HT</th>
                     {profile.assujettiTVA && <th style={{ width: 70 }}>TVA %</th>}
                     <th className="right">Total HT</th>
-                    {!locked && <th style={{ width: 36 }} />}
+                    {!locked && <th style={{ width: 70 }} />}
                   </tr>
                 </thead>
                 <tbody>
@@ -381,7 +408,10 @@ export default function DocumentEditor() {
                       )}
                       <td className="total">{fmtEUR(ligneTotalHT(l))}</td>
                       {!locked && (
-                        <td>
+                        <td className="nowrap">
+                          <button type="button" className="btn ghost sm icon" onClick={() => addToCatalogue(l)} aria-label="Ajouter au catalogue" title="Ajouter au catalogue" disabled={!l.description.trim()}>
+                            <Icon name="table" size={15} />
+                          </button>
                           <button type="button" className="btn danger sm icon" onClick={() => removeLigne(l.id)} aria-label="Supprimer la ligne" disabled={doc.lignes.length === 1}>
                             <Icon name="x" size={15} />
                           </button>
@@ -468,6 +498,26 @@ export default function DocumentEditor() {
                   </tbody>
                 </table>
               )}
+              {mesRelances.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="label" style={{ marginBottom: 4 }}>Relances</div>
+                  <table className="table">
+                    <tbody>
+                      {mesRelances.map((r) => (
+                        <tr key={r.id}>
+                          <td className="tnum small">{fmtDate(r.date)}</td>
+                          <td className="small text-2">{CANAUX.find((c) => c.value === r.canal)?.label}{r.note && <> · {r.note}</>}</td>
+                          <td style={{ width: 32 }}>
+                            <button type="button" className="btn danger sm icon" aria-label="Supprimer la relance" onClick={async () => { if (confirm('Supprimer cette relance ?')) await supprimerRelance(r.id!); }}>
+                              <Icon name="x" size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <div className="totals" style={{ marginTop: 10 }}>
                 <div className="row"><span className="text-2">Encaissé</span><span className="tnum">{fmtEUR(paye)}</span></div>
                 <div className="row big" style={{ fontSize: 15 }}><span>Reste à payer</span><span className={`tnum${reste > 0 ? '' : ' good'}`}>{fmtEUR(Math.max(0, reste))}</span></div>
@@ -497,6 +547,11 @@ export default function DocumentEditor() {
               )}
               {locked && isFacture && doc.statut === 'envoyee' && mesPaiements.length === 0 && !doc.avoirId && (
                 <button type="button" className="btn danger sm" onClick={onAnnuler} title="Uniquement si la facture n’a jamais été transmise">Annuler (non transmise)</button>
+              )}
+              {isFacture && doc.id && doc.clientId && doc.statut !== 'annulee' && (
+                <button type="button" className="btn ghost sm" onClick={() => setRecurrenceModal(true)} title="Générer automatiquement cette facture à intervalle régulier">
+                  <Icon name="convert" size={15} /> Rendre récurrente
+                </button>
               )}
               {!locked && (
                 <button type="button" className="btn danger sm" onClick={onSupprimer}>
@@ -535,6 +590,13 @@ export default function DocumentEditor() {
             await reload();
           }}
         />
+      )}
+      <CatalogueModal open={catalogueModal} onClose={() => setCatalogueModal(false)} onPick={addFromCatalogue} />
+      {isFacture && doc.id && (
+        <>
+          <RelanceModal open={relanceModal} onClose={() => setRelanceModal(false)} doc={doc} profile={profile} reste={Math.max(0, reste)} relances={mesRelances} />
+          <RecurrenceModal open={recurrenceModal} onClose={() => setRecurrenceModal(false)} doc={doc} onCreated={() => navigate('/documents?type=recurrente')} />
+        </>
       )}
     </>
   );
