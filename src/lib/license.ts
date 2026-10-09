@@ -7,7 +7,7 @@ import { PUBLIC_KEY_JWK } from './license-public-key';
 export const TRIAL_DAYS = 14;
 /** Page de vente (checkout Lemon Squeezy, Gumroad, Stripe…). Vide : le bouton d'achat ouvre un e-mail vers SUPPORT_EMAIL. */
 export const PURCHASE_URL = '';
-export const SUPPORT_EMAIL = 'maitox.ytb@gmail.com';
+export const SUPPORT_EMAIL = 'contact.maitox@gmail.com';
 const PREFIX = 'AFE1-';
 
 export interface LicensePayload {
