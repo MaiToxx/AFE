@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import BuyLicenceButton from '../components/BuyLicenceButton';
 import { useTheme, type Theme } from '../components/Layout';
 import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
 import { clearAll, db, deleteSetting, exportBackup, importBackup, saveProfile, setSetting } from '../db/db';
@@ -10,7 +11,7 @@ import { defaultBaremeFor, pickBareme } from '../lib/bareme';
 import { acreEnd } from '../lib/cotisations';
 import { todayISO, yearOf } from '../lib/dates';
 import { loadDemo } from '../lib/demo';
-import { isTauri, saveTextFile } from '../lib/desktop';
+import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
 import { fmtDate } from '../lib/format';
 
 type Tab = 'profil' | 'facturation' | 'bareme' | 'donnees' | 'licence' | 'apparence';
@@ -217,13 +218,19 @@ function LicenceTab() {
           </button>
         </div>
       </div>
-      <div className="card">
-        <h3>Obtenir une licence</h3>
-        <p className="small text-2" style={{ margin: '4px 0 0' }}>
-          Achat et informations : <a href={PURCHASE_URL} target="_blank" rel="noreferrer">{PURCHASE_URL}</a> · assistance : <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.
-          La licence est personnelle, valable sur tous vos appareils, et incluse dans vos sauvegardes.
-        </p>
-      </div>
+      {lic.status !== 'licensed' && (
+        <div className="card">
+          <h3>Obtenir une licence</h3>
+          <p className="small text-2" style={{ margin: '4px 0 12px' }}>
+            Licence personnelle, sans abonnement obligatoire, valable sur tous vos appareils et incluse dans vos sauvegardes.
+            Vous recevez votre clé par e-mail après l'achat.{PURCHASE_URL ? '' : ' Tant que la boutique en ligne n’est pas ouverte, la demande se fait par e-mail.'}
+          </p>
+          <div className="actions">
+            <BuyLicenceButton />
+            <span className="small muted">Assistance : <a href={`mailto:${SUPPORT_EMAIL}`} onClick={(e) => { e.preventDefault(); void openExternal(`mailto:${SUPPORT_EMAIL}`); }}>{SUPPORT_EMAIL}</a></span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -349,6 +356,7 @@ function FacturationTab({ form, set }: { form: Profile; set: (p: Partial<Profile
         <div className="form-row">
           <Field label="Préfixe des factures" help={`Ex. ${form.prefixeFacture || 'F'}-${yearOf(todayISO())}-0001`}><input type="text" value={form.prefixeFacture} onChange={(e) => set({ prefixeFacture: e.target.value.trim() })} /></Field>
           <Field label="Préfixe des devis"><input type="text" value={form.prefixeDevis} onChange={(e) => set({ prefixeDevis: e.target.value.trim() })} /></Field>
+          <Field label="Préfixe des avoirs"><input type="text" value={form.prefixeAvoir} onChange={(e) => set({ prefixeAvoir: e.target.value.trim() })} /></Field>
           <Field label="Délai de paiement (jours)"><NumInput value={form.delaiPaiementJours} onChange={(n) => set({ delaiPaiementJours: Math.round(n) })} min={0} /></Field>
           <Field label="Validité des devis (jours)"><NumInput value={form.validiteDevisJours} onChange={(n) => set({ validiteDevisJours: Math.round(n) })} min={0} /></Field>
         </div>

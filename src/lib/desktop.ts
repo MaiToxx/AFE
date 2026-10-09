@@ -35,3 +35,17 @@ export async function saveTextFile(filename: string, text: string): Promise<bool
   await writeTextFile(path, text);
   return true;
 }
+
+/**
+ * Ouvre une URL externe (page d'achat, e-mail) dans le navigateur ou le client par défaut.
+ * Sous Tauri, la webview ne sait pas ouvrir une fenêtre externe seule : on passe par le plugin opener.
+ */
+export async function openExternal(url: string): Promise<void> {
+  if (isTauri) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+    return;
+  }
+  // mailto: dans l'onglet courant (déclenche le client mail sans quitter la page) ; http(s) dans un nouvel onglet.
+  window.open(url, url.startsWith('mailto:') ? '_self' : '_blank', 'noopener,noreferrer');
+}

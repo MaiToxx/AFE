@@ -45,6 +45,7 @@ const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
   { to: '/documents', label: 'Factures & devis', icon: 'file' },
   { to: '/clients', label: 'Clients', icon: 'users' },
   { to: '/cotisations', label: 'Cotisations', icon: 'calc' },
+  { to: '/recettes', label: 'Livre des recettes', icon: 'table' },
   { to: '/parametres', label: 'Paramètres', icon: 'settings' },
 ];
 

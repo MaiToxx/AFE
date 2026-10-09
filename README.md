@@ -69,8 +69,9 @@ L'application se vérifie **hors ligne** avec des clés de licence signées (ECD
 (les données restent toujours consultables et exportables). L'outillage vendeur est dans
 [`scripts/license/`](scripts/license/README.md) : `keygen.mjs` (une fois), puis
 `issue.mjs --name "…" --email …` après chaque vente. **`scripts/license/private.jwk` est secret
-et n'est jamais commité** — sauvegardez-le hors ligne. Modifiez `PURCHASE_URL` et
-`SUPPORT_EMAIL` dans `src/lib/license.ts`.
+et n'est jamais commité** — sauvegardez-le hors ligne. Le bouton « Acheter une licence »
+ouvre `PURCHASE_URL` (`src/lib/license.ts`) dans le navigateur ; tant que cette constante est
+vide, il devient « Demander une licence » et ouvre un e-mail pré-rempli vers `SUPPORT_EMAIL`.
 
 ## Démonstration et export PDF en ligne de commande
 

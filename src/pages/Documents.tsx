@@ -23,11 +23,23 @@ const STATUTS: Record<DocType, { value: string; label: string }[]> = {
     { value: 'accepte', label: 'Acceptés' },
     { value: 'refuse', label: 'Refusés' },
   ],
+  avoir: [
+    { value: 'tous', label: 'Tous les statuts' },
+    { value: 'brouillon', label: 'Brouillons' },
+    { value: 'envoye', label: 'Émis' },
+  ],
+};
+
+const LABELS: Record<DocType, { onglet: string; vide: string; nouveau: string; date: string }> = {
+  facture: { onglet: 'Factures', vide: 'Aucune facture', nouveau: 'Nouvelle facture', date: 'Échéance' },
+  devis: { onglet: 'Devis', vide: 'Aucun devis', nouveau: 'Nouveau devis', date: 'Validité' },
+  avoir: { onglet: 'Avoirs', vide: 'Aucun avoir', nouveau: '', date: 'Date' },
 };
 
 export default function Documents() {
   const [params, setParams] = useSearchParams();
-  const type: DocType = params.get('type') === 'devis' ? 'devis' : 'facture';
+  const t = params.get('type');
+  const type: DocType = t === 'devis' || t === 'avoir' ? t : 'facture';
   const navigate = useNavigate();
   const docs = useDocuments();
   const paiements = usePaiements();
@@ -80,8 +92,11 @@ export default function Documents() {
         }
       />
       <div className="tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={isFacture} className={isFacture ? 'active' : ''} onClick={() => switchType('facture')}>Factures</button>
-        <button type="button" role="tab" aria-selected={!isFacture} className={!isFacture ? 'active' : ''} onClick={() => switchType('devis')}>Devis</button>
+        {(['facture', 'devis', 'avoir'] as DocType[]).map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={type === k} className={type === k ? 'active' : ''} onClick={() => switchType(k)}>
+            {LABELS[k].onglet}
+          </button>
+        ))}
       </div>
       <div className="card">
         <div className="toolbar">
@@ -96,11 +111,17 @@ export default function Documents() {
         </div>
         {list.length === 0 ? (
           <Empty
-            title={isFacture ? 'Aucune facture' : 'Aucun devis'}
-            text={q || statut !== 'tous' ? 'Aucun document ne correspond à ces critères.' : `Créez votre ${isFacture ? 'première facture' : 'premier devis'} en un clic.`}
-            action={!q && statut === 'tous' && (
+            title={LABELS[type].vide}
+            text={
+              q || statut !== 'tous'
+                ? 'Aucun document ne correspond à ces critères.'
+                : type === 'avoir'
+                  ? 'Un avoir se crée depuis une facture finalisée (bouton « Créer un avoir » dans la facture) : c’est la seule façon légale de corriger ou d’annuler une facture déjà transmise.'
+                  : `Créez votre ${isFacture ? 'première facture' : 'premier devis'} en un clic.`
+            }
+            action={!q && statut === 'tous' && type !== 'avoir' && (
               <button type="button" className="btn primary" onClick={() => navigate(`/documents/nouveau?type=${type}`)}>
-                <Icon name="plus" /> {isFacture ? 'Nouvelle facture' : 'Nouveau devis'}
+                <Icon name="plus" /> {LABELS[type].nouveau}
               </button>
             )}
           />
@@ -115,7 +136,7 @@ export default function Documents() {
                   <th>Objet</th>
                   <th className="num">Montant TTC</th>
                   <th>Statut</th>
-                  <th>{isFacture ? 'Échéance' : 'Validité'}</th>
+                  <th>{LABELS[type].date}</th>
                   <th />
                 </tr>
               </thead>
@@ -129,7 +150,7 @@ export default function Documents() {
                       <td className="tnum">{fmtDate(d.dateEmission)}</td>
                       <td>{clientName(d)}</td>
                       <td className="text-2 ellipsis" title={d.objet}>{d.objet || <span className="muted">—</span>}</td>
-                      <td className="num">{fmtEUR(d.totalTTC)}</td>
+                      <td className="num">{type === 'avoir' ? `− ${fmtEUR(d.totalTTC)}` : fmtEUR(d.totalTTC)}</td>
                       <td><Badge tone={st.tone}>{st.label}</Badge></td>
                       <td className="tnum text-2">{fmtDate(d.dateEcheance)}</td>
                       <td>

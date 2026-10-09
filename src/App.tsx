@@ -9,6 +9,7 @@ import DocumentEditor from './pages/DocumentEditor';
 import DocumentPrint from './pages/DocumentPrint';
 import Documents from './pages/Documents';
 import Parametres from './pages/Parametres';
+import Recettes from './pages/Recettes';
 
 export default function App() {
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="documents/:id" element={<DocumentEditor />} />
           <Route path="clients" element={<Clients />} />
           <Route path="cotisations" element={<Cotisations />} />
+          <Route path="recettes" element={<Recettes />} />
           <Route path="parametres" element={<Parametres />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

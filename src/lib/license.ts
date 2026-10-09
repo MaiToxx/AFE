@@ -5,9 +5,9 @@ import { addDays, parseISO, todayISO } from './dates';
 import { PUBLIC_KEY_JWK } from './license-public-key';
 
 export const TRIAL_DAYS = 14;
-/** Page de vente affichée dans l'application : à remplacer par la vôtre. */
-export const PURCHASE_URL = 'https://exemple.fr/afe';
-export const SUPPORT_EMAIL = 'contact@exemple.fr';
+/** Page de vente (checkout Lemon Squeezy, Gumroad, Stripe…). Vide : le bouton d'achat ouvre un e-mail vers SUPPORT_EMAIL. */
+export const PURCHASE_URL = '';
+export const SUPPORT_EMAIL = 'xavier45letop@gmail.com';
 const PREFIX = 'AFE1-';
 
 export interface LicensePayload {
@@ -93,4 +93,14 @@ export function trialStatus(trialStart: string, today = todayISO()): LicenseStat
   if (today > endsOn) return { status: 'trial_over' };
   const daysLeft = Math.max(0, Math.round((parseISO(endsOn).getTime() - parseISO(today).getTime()) / 86_400_000));
   return { status: 'trial', daysLeft, endsOn };
+}
+
+/** Cible du bouton d'achat : page de vente si configurée, sinon e-mail pré-rempli au vendeur. */
+export function purchaseTarget(info?: { name?: string; email?: string }): { label: string; url: string } {
+  if (PURCHASE_URL) return { label: 'Acheter une licence', url: PURCHASE_URL };
+  const subject = encodeURIComponent('Achat d’une licence AFE');
+  const body = encodeURIComponent(
+    `Bonjour,\n\nJe souhaite acheter une licence AFE.\n\nNom : ${info?.name ?? ''}\nE-mail : ${info?.email ?? ''}\nVersion de l'application : ${__APP_VERSION__}\n\nMerci.`,
+  );
+  return { label: 'Demander une licence', url: `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}` };
 }

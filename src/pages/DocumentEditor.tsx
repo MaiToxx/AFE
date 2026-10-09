@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import BuyLicenceButton from '../components/BuyLicenceButton';
 import ClientForm from '../components/ClientForm';
 import { Badge, Field, Icon, Modal, Notice, NumInput, PageHeader } from '../components/ui';
 import { db } from '../db/db';
@@ -8,8 +9,8 @@ import { canFinalize } from '../lib/license';
 import { ACTIVITES, MOYENS, type ActivityKind, type Doc, type DocType, type Ligne, type MoyenPaiement } from '../db/types';
 import { isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
-  computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
-  ligneTotalHT, montantPaye, newDoc, newLigne, nextSeq, saveDoc, setStatut, statutInfo, supprimerDoc, supprimerPaiement,
+  DOC_DEFAULTS, avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
+  ligneTotalHT, montantPaye, montantRembourse, newDoc, newLigne, nextSeq, prefixeFor, rembourser, saveDoc, setStatut, statutInfo, supprimerDoc, supprimerPaiement,
 } from '../lib/documents';
 import { fmtDate, fmtEUR, round2 } from '../lib/format';
 
@@ -32,6 +33,7 @@ export default function DocumentEditor() {
   const [error, setError] = useState<ReactNode>(null);
   const [clientModal, setClientModal] = useState(false);
   const [payModal, setPayModal] = useState(false);
+  const [refundModal, setRefundModal] = useState(false);
   const [linked, setLinked] = useState<Doc | null>(null);
 
   // Chargement (ou création en mémoire pour un nouveau document).
@@ -44,7 +46,7 @@ export default function DocumentEditor() {
     const num = Number(id);
     if (docRef.current?.id === num) return;
     db.documents.get(num).then((d) => {
-      if (d) setDoc(d);
+      if (d) setDoc({ ...DOC_DEFAULTS, ...d });
       else navigate('/documents', { replace: true });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -52,13 +54,13 @@ export default function DocumentEditor() {
 
   // Document lié (devis ↔ facture).
   useEffect(() => {
-    const lid = doc?.devisId ?? doc?.factureId ?? null;
+    const lid = doc?.avoirDe ?? doc?.avoirId ?? doc?.devisId ?? doc?.factureId ?? null;
     if (!lid) {
       setLinked(null);
       return;
     }
-    db.documents.get(lid).then((d) => setLinked(d ?? null));
-  }, [doc?.devisId, doc?.factureId]);
+    db.documents.get(lid).then((d) => setLinked(d ? { ...DOC_DEFAULTS, ...d } : null));
+  }, [doc?.devisId, doc?.factureId, doc?.avoirDe, doc?.avoirId]);
 
   // Enregistrement automatique des brouillons.
   useEffect(() => {
@@ -80,15 +82,20 @@ export default function DocumentEditor() {
   async function reload() {
     if (!doc?.id) return;
     const d = await db.documents.get(doc.id);
-    if (d) setDoc(d);
+    if (d) setDoc({ ...DOC_DEFAULTS, ...d });
   }
 
   if (!loaded || !doc) return <div className="muted">Chargement…</div>;
 
   const locked = isLocked(doc);
   const isFacture = doc.type === 'facture';
+  const isAvoir = doc.type === 'avoir';
   const totals = computeTotals(doc, profile.assujettiTVA);
   const paye = montantPaye(doc, paiements);
+  // Avoir : encaissements bruts et remboursements déjà effectués sur la facture d'origine.
+  const origineEncaisse = isAvoir && doc.avoirDe ? paiements.filter((p) => p.factureId === doc.avoirDe && p.montant > 0).reduce((s, p) => s + p.montant, 0) : 0;
+  const rembourse = isAvoir ? montantRembourse(doc, paiements) : 0;
+  const remboursable = isAvoir ? Math.max(0, round2(Math.min(doc.totalTTC, origineEncaisse) - rembourse)) : 0;
   const reste = round2(doc.totalTTC - paye);
   const st = statutInfo(doc, paye);
   const mesPaiements = paiements.filter((p) => p.factureId === doc.id).sort((a, b) => a.date.localeCompare(b.date));
@@ -119,10 +126,13 @@ export default function DocumentEditor() {
   async function onFinaliser() {
     if (!canFinalize(licence)) {
       setError(
-        <>
-          {licence.status === 'trial_over' ? "La période d'essai est terminée" : 'Aucune licence valide'} : la finalisation des documents nécessite une licence.{' '}
-          <Link to="/parametres?tab=licence">Activer une licence</Link>
-        </>,
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span>
+            {licence.status === 'trial_over' ? "La période d'essai est terminée" : 'Aucune licence valide'} : la finalisation des documents nécessite une licence.{' '}
+            <Link to="/parametres?tab=licence">Activer une licence</Link>
+          </span>
+          <BuyLicenceButton small />
+        </div>,
       );
       return;
     }
@@ -136,10 +146,12 @@ export default function DocumentEditor() {
     d = { ...d, id: nid };
     setDirty(false);
     const annee = yearOf(d.dateEmission);
-    const numero = d.numero || formatNumero(isFacture ? profile.prefixeFacture : profile.prefixeDevis, annee, await nextSeq(d.type, annee));
+    const numero = d.numero || formatNumero(prefixeFor(d.type, profile), annee, await nextSeq(d.type, annee));
     const msg = isFacture
       ? `La facture recevra le numéro définitif ${numero}.\n\nUne fois finalisée, elle ne pourra plus être modifiée (seuls les encaissements et l'annulation restent possibles). Continuer ?`
-      : `Le devis recevra le numéro ${numero} et sera marqué comme envoyé. Continuer ?`;
+      : isAvoir
+        ? `L'avoir recevra le numéro définitif ${numero} et ne pourra plus être modifié. Continuer ?`
+        : `Le devis recevra le numéro ${numero} et sera marqué comme envoyé. Continuer ?`;
     if (!confirm(msg)) {
       setDoc(d);
       return;
@@ -166,9 +178,15 @@ export default function DocumentEditor() {
   }
 
   async function onAnnuler() {
-    if (!confirm('Annuler cette facture ? Elle restera dans votre historique avec le statut « annulée ».')) return;
+    if (!confirm("Annuler cette facture ? À réserver à une facture jamais transmise au client : une facture envoyée se corrige par un avoir.\n\nElle restera dans l'historique avec le statut « annulée ».")) return;
     await setStatut(doc!.id!, 'annulee');
     await reload();
+  }
+
+  async function onAvoir() {
+    if (!confirm(`Créer un avoir reprenant les lignes de ${docLabel(doc!)} ? Vous pourrez ajuster les montants (avoir partiel) avant de le finaliser.`)) return;
+    const nid = await avoirDepuisFacture(doc!, profile);
+    navigate(`/documents/${nid}`);
   }
 
   async function onStatut(s: Doc['statut']) {
@@ -176,7 +194,8 @@ export default function DocumentEditor() {
     await reload();
   }
 
-  const title = isNew && !doc.id ? (isFacture ? 'Nouvelle facture' : 'Nouveau devis') : docLabel(doc);
+  const title = isNew && !doc.id ? (isFacture ? 'Nouvelle facture' : isAvoir ? 'Nouvel avoir' : 'Nouveau devis') : docLabel(doc);
+  const lienLabel = isAvoir ? 'Avoir sur la ' : isFacture && doc.avoirId ? 'Corrigée par l’' : isFacture ? 'Issue du ' : 'Converti en ';
 
   return (
     <>
@@ -190,8 +209,9 @@ export default function DocumentEditor() {
         subtitle={
           linked && (
             <>
-              {isFacture ? 'Issue du ' : 'Converti en '}
+              {lienLabel}
               <Link to={`/documents/${linked.id}`}>{docLabel(linked)}</Link>
+              {isAvoir && linked.dateEmission && <> du {fmtDate(linked.dateEmission)}</>}
             </>
           )
         }
@@ -215,7 +235,12 @@ export default function DocumentEditor() {
                 <Icon name="wallet" /> Encaisser
               </button>
             )}
-            {locked && !isFacture && doc.statut === 'envoye' && (
+            {locked && isAvoir && remboursable > 0 && (
+              <button type="button" className="btn primary" onClick={() => setRefundModal(true)}>
+                <Icon name="wallet" /> Enregistrer le remboursement
+              </button>
+            )}
+            {locked && doc.type === 'devis' && doc.statut === 'envoye' && (
               <>
                 <button type="button" className="btn" onClick={() => onStatut('refuse')}>Refusé</button>
                 <button type="button" className="btn primary" onClick={onConvertir}>
@@ -223,7 +248,7 @@ export default function DocumentEditor() {
                 </button>
               </>
             )}
-            {locked && !isFacture && doc.statut === 'accepte' && !doc.factureId && (
+            {locked && doc.type === 'devis' && doc.statut === 'accepte' && !doc.factureId && (
               <button type="button" className="btn primary" onClick={onConvertir}>
                 <Icon name="convert" /> Convertir en facture
               </button>
@@ -236,8 +261,13 @@ export default function DocumentEditor() {
       {bloque && !locked && !error && (
         <div style={{ marginBottom: 14 }}>
           <Notice tone="warning">
-            Vous pouvez préparer ce brouillon, mais sa finalisation (numéro définitif, envoi) nécessite une licence active.{' '}
-            <Link to="/parametres?tab=licence">Activer une licence</Link>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span>
+                Vous pouvez préparer ce brouillon, mais sa finalisation (numéro définitif, envoi) nécessite une licence active.{' '}
+                <Link to="/parametres?tab=licence">Activer une licence</Link>
+              </span>
+              <BuyLicenceButton small primary={false} />
+            </div>
           </Notice>
         </div>
       )}
@@ -245,8 +275,10 @@ export default function DocumentEditor() {
         <div style={{ marginBottom: 14 }}>
           <Notice>
             {isFacture
-              ? 'Facture finalisée : son contenu est verrouillé pour garantir une numérotation continue. Pour corriger, dupliquez-la ou annulez-la.'
-              : 'Devis finalisé. Vous pouvez le repasser en brouillon pour le modifier tant qu\'il n\'a pas été converti.'}
+              ? 'Facture finalisée : son contenu est verrouillé pour garantir une numérotation continue. Pour la corriger, créez un avoir.'
+              : isAvoir
+                ? 'Avoir émis : son contenu est verrouillé.'
+                : 'Devis finalisé. Vous pouvez le repasser en brouillon pour le modifier tant qu\'il n\'a pas été converti.'}
           </Notice>
         </div>
       )}
@@ -294,6 +326,22 @@ export default function DocumentEditor() {
                   ))}
                 </select>
               </Field>
+            </div>
+            <div className="form-row" style={{ marginTop: 14 }}>
+              <Field label="Date de la prestation / livraison" help="Ou début de période. Mention attendue sur les factures depuis 2026.">
+                <input type="date" value={doc.prestationDebut} disabled={locked} onChange={(e) => update({ prestationDebut: e.target.value })} />
+              </Field>
+              <Field label="Fin de période (optionnel)">
+                <input type="date" value={doc.prestationFin} disabled={locked} onChange={(e) => update({ prestationFin: e.target.value })} />
+              </Field>
+              <Field label="N° de bon de commande client (optionnel)">
+                <input type="text" value={doc.bonCommande} disabled={locked} onChange={(e) => update({ bonCommande: e.target.value })} />
+              </Field>
+              {doc.activite === 'vente' && (
+                <Field label="Adresse de livraison (si différente)">
+                  <input type="text" value={doc.adresseLivraison} disabled={locked} onChange={(e) => update({ adresseLivraison: e.target.value })} />
+                </Field>
+              )}
             </div>
           </div>
 
@@ -371,6 +419,25 @@ export default function DocumentEditor() {
             </div>
           </div>
 
+          {isAvoir && locked && linked && (
+            <div className="card">
+              <h2 style={{ marginBottom: 10 }}>Facture d'origine</h2>
+              <dl className="kv">
+                <dt>Facture</dt><dd><Link to={`/documents/${linked.id}`}>{linked.numero}</Link> du {fmtDate(linked.dateEmission)}</dd>
+                <dt>Montant</dt><dd className="tnum">{fmtEUR(linked.totalTTC)}</dd>
+                <dt>Encaissé</dt><dd className="tnum">{fmtEUR(origineEncaisse)}</dd>
+                <dt>Remboursé</dt><dd className="tnum">{fmtEUR(rembourse)}</dd>
+              </dl>
+              <p className="small text-2" style={{ marginTop: 10 }}>
+                {origineEncaisse <= 0
+                  ? 'Facture non encaissée : l’avoir la corrige sans mouvement d’argent.'
+                  : remboursable > 0
+                    ? `Reste ${fmtEUR(remboursable)} à rembourser au client (ou à déduire de sa prochaine facture).`
+                    : 'Remboursement enregistré : le CA encaissé de la période a été réduit d’autant.'}
+              </p>
+            </div>
+          )}
+
           {isFacture && locked && doc.statut !== 'annulee' && (
             <div className="card">
               <div className="card-head">
@@ -410,21 +477,26 @@ export default function DocumentEditor() {
 
           <div className="card tight">
             <div className="actions" style={{ justifyContent: 'flex-start' }}>
-              {doc.id && (
+              {doc.id && !isAvoir && (
                 <button type="button" className="btn ghost sm" onClick={onDupliquer}>
                   <Icon name="copy" size={15} /> Dupliquer
                 </button>
               )}
-              {locked && !isFacture && !doc.factureId && doc.statut !== 'brouillon' && (
+              {locked && isFacture && (doc.statut === 'envoyee' || doc.statut === 'payee') && !doc.avoirId && (
+                <button type="button" className="btn ghost sm" onClick={onAvoir} title="Corrige ou annule légalement une facture transmise">
+                  <Icon name="convert" size={15} /> Créer un avoir
+                </button>
+              )}
+              {locked && doc.type === 'devis' && !doc.factureId && doc.statut !== 'brouillon' && (
                 <button type="button" className="btn ghost sm" onClick={() => onStatut('brouillon')}>
                   <Icon name="pen" size={15} /> Repasser en brouillon
                 </button>
               )}
-              {locked && !isFacture && doc.statut === 'refuse' && (
+              {locked && doc.type === 'devis' && doc.statut === 'refuse' && (
                 <button type="button" className="btn ghost sm" onClick={() => onStatut('envoye')}>Rouvrir</button>
               )}
-              {locked && isFacture && doc.statut === 'envoyee' && mesPaiements.length === 0 && (
-                <button type="button" className="btn danger sm" onClick={onAnnuler}>Annuler la facture</button>
+              {locked && isFacture && doc.statut === 'envoyee' && mesPaiements.length === 0 && !doc.avoirId && (
+                <button type="button" className="btn danger sm" onClick={onAnnuler} title="Uniquement si la facture n’a jamais été transmise">Annuler (non transmise)</button>
               )}
               {!locked && (
                 <button type="button" className="btn danger sm" onClick={onSupprimer}>
@@ -449,14 +521,32 @@ export default function DocumentEditor() {
           }}
         />
       )}
+      {isAvoir && (
+        <PaiementModal
+          open={refundModal}
+          onClose={() => setRefundModal(false)}
+          reste={remboursable}
+          title="Enregistrer le remboursement"
+          intro="Le remboursement est déduit du CA encaissé de sa période de déclaration URSSAF."
+          montantLabel="Montant remboursé"
+          onSubmit={async (p) => {
+            await rembourser(doc, p);
+            setRefundModal(false);
+            await reload();
+          }}
+        />
+      )}
     </>
   );
 }
 
-function PaiementModal({ open, onClose, reste, onSubmit }: {
+function PaiementModal({ open, onClose, reste, onSubmit, title = 'Enregistrer un encaissement', intro = "La date d'encaissement détermine la période de déclaration URSSAF.", montantLabel = 'Montant encaissé (TTC)' }: {
   open: boolean;
   onClose: () => void;
   reste: number;
+  title?: string;
+  intro?: string;
+  montantLabel?: string;
   onSubmit: (p: { date: string; montant: number; moyen: MoyenPaiement; libelle: string }) => Promise<void>;
 }) {
   const [date, setDate] = useState(todayISO());
@@ -475,7 +565,7 @@ function PaiementModal({ open, onClose, reste, onSubmit }: {
     <Modal
       open={open}
       onClose={onClose}
-      title="Enregistrer un encaissement"
+      title={title}
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>Annuler</button>
@@ -485,12 +575,12 @@ function PaiementModal({ open, onClose, reste, onSubmit }: {
         </>
       }
     >
-      <p className="small text-2">La date d'encaissement détermine la période de déclaration URSSAF.</p>
+      <p className="small text-2">{intro}</p>
       <div className="form-row">
         <Field label="Date d'encaissement">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </Field>
-        <Field label="Montant encaissé (TTC)">
+        <Field label={montantLabel}>
           <NumInput value={montant} onChange={setMontant} min={0} />
         </Field>
       </div>

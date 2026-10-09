@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/ui';
 import { db } from '../db/db';
 import { useClients, usePaiements, useProfile } from '../db/hooks';
-import type { ClientSnapshot } from '../db/types';
+import { categorieOperation, type ClientSnapshot } from '../db/types';
 import { ligneTotalHT, montantPaye } from '../lib/documents';
 import { fmtDate, fmtEUR, fmtNum } from '../lib/format';
 
@@ -17,6 +17,7 @@ export default function DocumentPrint() {
   const clients = useClients();
   const paiements = usePaiements();
   const printed = useRef(false);
+  const origine = useLiveQuery(async () => (doc?.avoirDe ? await db.documents.get(doc.avoirDe) : undefined), [doc?.avoirDe]);
 
   const liveClient = doc?.clientId ? clients.find((c) => c.id === doc.clientId) : undefined;
   const client: ClientSnapshot | null = doc?.client ?? (liveClient ? { ...liveClient } : null);
@@ -43,7 +44,13 @@ export default function DocumentPrint() {
   if (!doc) return <div className="print-stage"><p>Document introuvable.</p></div>;
 
   const isFacture = doc.type === 'facture';
-  const titre = isFacture ? 'FACTURE' : 'DEVIS';
+  const isAvoir = doc.type === 'avoir';
+  const titre = isFacture ? 'FACTURE' : isAvoir ? 'AVOIR' : 'DEVIS';
+  const periode = doc.prestationDebut
+    ? doc.prestationFin && doc.prestationFin !== doc.prestationDebut
+      ? `Période : du ${fmtDate(doc.prestationDebut)} au ${fmtDate(doc.prestationFin)}`
+      : `Date de la ${doc.activite === 'vente' ? 'livraison' : 'prestation'} : ${fmtDate(doc.prestationDebut)}`
+    : '';
   const paye = montantPaye(doc, paiements);
   const dernierPaiement = paiements.filter((p) => p.factureId === doc.id).sort((a, b) => b.date.localeCompare(a.date))[0];
   const brut = doc.lignes.reduce((s, l) => s + ligneTotalHT(l), 0);
@@ -82,7 +89,7 @@ export default function DocumentPrint() {
             <div className="num">{doc.numero || 'PROVISOIRE — brouillon'}</div>
             <div className="dates">
               <div>Date : {fmtDate(doc.dateEmission)}</div>
-              <div>{isFacture ? 'Échéance' : 'Valable jusqu’au'} : {fmtDate(doc.dateEcheance)}</div>
+              {!isAvoir && <div>{isFacture ? 'Échéance' : 'Valable jusqu’au'} : {fmtDate(doc.dateEcheance)}</div>}
             </div>
           </div>
         </header>
@@ -110,9 +117,25 @@ export default function DocumentPrint() {
           </div>
         </section>
 
+        {isAvoir && (
+          <p className="sheet-objet">
+            <b>Avoir sur la facture {origine?.numero ?? ''}</b>
+            {origine?.dateEmission && <> du {fmtDate(origine.dateEmission)}</>}
+            {origine && <> (montant initial : {fmtEUR(origine.totalTTC)})</>}
+          </p>
+        )}
         {doc.objet && (
           <p className="sheet-objet">
             <b>Objet :</b> {doc.objet}
+          </p>
+        )}
+        {(periode || doc.bonCommande || doc.adresseLivraison || isFacture || isAvoir) && (
+          <p className="sheet-objet" style={{ fontSize: '9.5pt', color: '#333' }}>
+            {periode && <span>{periode}</span>}
+            {periode && (isFacture || isAvoir) && ' · '}
+            {(isFacture || isAvoir) && <span>Catégorie d'opération : {categorieOperation(doc.activite)}</span>}
+            {doc.bonCommande && <span> · N° de bon de commande : {doc.bonCommande}</span>}
+            {doc.adresseLivraison && <span> · Adresse de livraison : {doc.adresseLivraison}</span>}
           </p>
         )}
 
@@ -150,7 +173,7 @@ export default function DocumentPrint() {
               )}
               <tr><td>Total HT</td><td>{fmtEUR(doc.totalHT)}</td></tr>
               {profile.assujettiTVA && <tr><td>TVA</td><td>{fmtEUR(doc.totalTVA)}</td></tr>}
-              <tr className="grand"><td>{profile.assujettiTVA ? 'Total TTC' : 'Total à payer'}</td><td>{fmtEUR(doc.totalTTC)}</td></tr>
+              <tr className="grand"><td>{isAvoir ? "Montant de l'avoir" : profile.assujettiTVA ? 'Total TTC' : 'Total à payer'}</td><td>{fmtEUR(doc.totalTTC)}</td></tr>
               {isFacture && paye > 0 && paye < doc.totalTTC && (
                 <>
                   <tr><td>Déjà réglé</td><td>− {fmtEUR(paye)}</td></tr>
@@ -173,6 +196,15 @@ export default function DocumentPrint() {
             </div>
           )}
           {!profile.assujettiTVA && <div>TVA non applicable, art. 293 B du CGI.</div>}
+          {isAvoir && (
+            <div>
+              <h4>Modalités</h4>
+              <div>
+                Cet avoir annule ou corrige la facture {origine?.numero ?? ''} à hauteur de {fmtEUR(doc.totalTTC)}. Le montant est déduit des sommes restant dues ou,
+                si la facture a été réglée, remboursé par virement{profile.delaiPaiementJours ? ` sous ${profile.delaiPaiementJours} jours` : ''}.
+              </div>
+            </div>
+          )}
           {isFacture && (
             <div>
               <h4>Conditions de règlement</h4>
@@ -192,7 +224,7 @@ export default function DocumentPrint() {
               )}
             </div>
           )}
-          {!isFacture && (
+          {doc.type === 'devis' && (
             <div>
               <div>Devis valable jusqu'au {fmtDate(doc.dateEcheance)}. {profile.conditionsPaiement}</div>
               <div className="signature">

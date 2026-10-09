@@ -1,9 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useState } from 'react';
 import { DEFAULT_PROFILE, db } from './db';
-import type { Bareme, Client, Doc, Paiement, Profile, Setting } from './types';
+import type { Bareme, Client, Doc, Paiement, Prestation, Profile, Recurrence, Relance, Setting } from './types';
 import { DEFAULT_BAREMES } from '../lib/bareme';
 import { todayISO } from '../lib/dates';
+import { DOC_DEFAULTS } from '../lib/documents';
 import { evaluate, trialStatus, verifyKey, type LicenseStatus } from '../lib/license';
 
 /** Statut de licence courant (essai, licence valide, expirée…), recalculé à chaque changement en base. */
@@ -53,7 +54,20 @@ export function useClients(): Client[] {
 }
 
 export function useDocuments(): Doc[] {
-  return useLiveQuery(() => db.documents.toArray(), [], []) ?? [];
+  // Les documents créés avant la v3 n'ont pas les champs ajoutés depuis : on complète à la lecture.
+  return useLiveQuery(() => db.documents.toArray().then((docs) => docs.map((d) => ({ ...DOC_DEFAULTS, ...d }))), [], []) ?? [];
+}
+
+export function useCatalogue(): Prestation[] {
+  return useLiveQuery(() => db.catalogue.orderBy('libelle').toArray(), [], []) ?? [];
+}
+
+export function useRelances(): Relance[] {
+  return useLiveQuery(() => db.relances.toArray(), [], []) ?? [];
+}
+
+export function useRecurrences(): Recurrence[] {
+  return useLiveQuery(() => db.recurrences.toArray(), [], []) ?? [];
 }
 
 export function usePaiements(): Paiement[] {

@@ -1,5 +1,5 @@
 import { db } from '../db/db';
-import type { Client, ClientSnapshot, Doc, DocType, Ligne, Paiement, Profile, Statut } from '../db/types';
+import type { Client, ClientSnapshot, Doc, DocType, Ligne, MoyenPaiement, Paiement, Profile, Statut } from '../db/types';
 import { addDays, todayISO, yearOf } from './dates';
 import { round2, uid } from './format';
 
@@ -27,11 +27,27 @@ export function newLigne(tauxTVA: number): Ligne {
   return { id: uid(), description: '', quantite: 1, unite: '', prixUnitaire: 0, tauxTVA };
 }
 
+/** Valeurs par défaut des champs ajoutés après la v1 (documents anciens). */
+export const DOC_DEFAULTS = {
+  avoirDe: null as number | null,
+  avoirId: null as number | null,
+  recurrenceId: null as number | null,
+  prestationDebut: '',
+  prestationFin: '',
+  bonCommande: '',
+  adresseLivraison: '',
+};
+
+export function prefixeFor(type: DocType, profile: Profile): string {
+  return type === 'facture' ? profile.prefixeFacture : type === 'avoir' ? profile.prefixeAvoir : profile.prefixeDevis;
+}
+
 export function newDoc(type: DocType, profile: Profile, clientId: number | null = null): Doc {
   const now = new Date().toISOString();
   const today = todayISO();
-  const delai = type === 'facture' ? profile.delaiPaiementJours : profile.validiteDevisJours;
+  const delai = type === 'facture' ? profile.delaiPaiementJours : type === 'devis' ? profile.validiteDevisJours : 0;
   return {
+    ...DOC_DEFAULTS,
     type,
     numero: '',
     numeroSeq: 0,
@@ -89,7 +105,7 @@ export async function finaliser(doc: Doc, profile: Profile): Promise<Doc> {
   if (!client) throw new Error('Client introuvable.');
   const annee = yearOf(doc.dateEmission);
   const seq = doc.numeroSeq > 0 ? doc.numeroSeq : await nextSeq(doc.type, annee);
-  const prefix = doc.type === 'facture' ? profile.prefixeFacture : profile.prefixeDevis;
+  const prefix = prefixeFor(doc.type, profile);
   const updated: Doc = {
     ...doc,
     ...computeTotals(doc, profile.assujettiTVA),
@@ -100,7 +116,57 @@ export async function finaliser(doc: Doc, profile: Profile): Promise<Doc> {
     updatedAt: new Date().toISOString(),
   };
   await db.documents.put(updated);
+  // Un avoir couvrant une facture jamais encaissée l'annule.
+  if (doc.type === 'avoir' && doc.avoirDe) {
+    const facture = await db.documents.get(doc.avoirDe);
+    const paye = (await db.paiements.where('factureId').equals(doc.avoirDe).toArray()).reduce((s, p) => s + p.montant, 0);
+    if (facture && paye <= 0.005 && updated.totalTTC >= facture.totalTTC - 0.005) {
+      await db.documents.update(doc.avoirDe, { statut: 'annulee', updatedAt: new Date().toISOString() });
+    }
+  }
   return updated;
+}
+
+/** Crée un avoir (brouillon) reprenant les lignes d'une facture finalisée. */
+export async function avoirDepuisFacture(facture: Doc, profile: Profile): Promise<number> {
+  const a = newDoc('avoir', profile, facture.clientId);
+  a.objet = facture.objet;
+  a.activite = facture.activite;
+  a.lignes = facture.lignes.map((l) => ({ ...l, id: uid() }));
+  a.remise = facture.remise;
+  a.client = facture.client;
+  a.avoirDe = facture.id ?? null;
+  a.bonCommande = facture.bonCommande ?? '';
+  const id = await saveDoc(a, profile);
+  if (facture.id) await db.documents.update(facture.id, { avoirId: id });
+  return id;
+}
+
+/** Montant déjà remboursé au titre d'un avoir (paiements négatifs sur la facture d'origine). */
+export function montantRembourse(avoir: Doc, paiements: Paiement[]): number {
+  if (!avoir.avoirDe) return 0;
+  return round2(paiements.filter((p) => p.factureId === avoir.avoirDe && p.montant < 0).reduce((s, p) => s - p.montant, 0));
+}
+
+/** Enregistre le remboursement d'un avoir : encaissement négatif sur la facture d'origine (réduit le CA de la période). */
+export async function rembourser(avoir: Doc, p: { date: string; montant: number; moyen: MoyenPaiement; libelle: string }): Promise<void> {
+  if (!avoir.avoirDe) throw new Error("Cet avoir n'est lié à aucune facture.");
+  const factureId = avoir.avoirDe;
+  await db.transaction('rw', [db.documents, db.paiements], async () => {
+    await db.paiements.add({
+      factureId,
+      date: p.date,
+      montant: -Math.abs(p.montant),
+      moyen: p.moyen,
+      activite: avoir.activite,
+      libelle: p.libelle || `Remboursement ${avoir.numero}`,
+    });
+    const facture = await db.documents.get(factureId);
+    if (!facture) return;
+    const total = (await db.paiements.where('factureId').equals(factureId).toArray()).reduce((s, x) => s + x.montant, 0);
+    const statut: Statut = total <= 0.005 ? 'annulee' : total >= facture.totalTTC - 0.005 ? 'payee' : 'envoyee';
+    await db.documents.update(factureId, { statut, updatedAt: new Date().toISOString() });
+  });
 }
 
 export async function saveDoc(doc: Doc, profile: Profile): Promise<number> {
@@ -146,6 +212,8 @@ export async function supprimerDoc(doc: Doc): Promise<void> {
     await db.paiements.where('factureId').equals(doc.id!).delete();
     if (doc.devisId) await db.documents.update(doc.devisId, { factureId: null });
     if (doc.factureId) await db.documents.update(doc.factureId, { devisId: null });
+    if (doc.avoirDe) await db.documents.update(doc.avoirDe, { avoirId: null });
+    if (doc.avoirId) await db.documents.update(doc.avoirId, { avoirDe: null });
     await db.documents.delete(doc.id!);
   });
 }
@@ -189,6 +257,7 @@ export function statutInfo(doc: Doc, paye = 0, today = todayISO()): { label: str
     case 'brouillon':
       return { label: 'Brouillon', tone: 'neutral' };
     case 'envoye':
+      if (doc.type === 'avoir') return { label: 'Émis', tone: 'good' };
       return doc.dateEcheance && doc.dateEcheance < today
         ? { label: 'Expiré', tone: 'warning' }
         : { label: 'Envoyé', tone: 'info' };
@@ -209,7 +278,7 @@ export function statutInfo(doc: Doc, paye = 0, today = todayISO()): { label: str
 }
 
 export function docLabel(doc: Doc): string {
-  const base = doc.type === 'facture' ? 'Facture' : 'Devis';
+  const base = doc.type === 'facture' ? 'Facture' : doc.type === 'avoir' ? 'Avoir' : 'Devis';
   return doc.numero ? `${base} ${doc.numero}` : `${base} (brouillon)`;
 }
 

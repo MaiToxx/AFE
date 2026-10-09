@@ -426,7 +426,12 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
 @media print {
   @page { size: A4; margin: 0; }
   html, body { background: #fff !important; }
-  .no-print { display: none !important; }
+  .no-print, .nav { display: none !important; }
+  /* Pages ordinaires (livre des recettes…) : contenu seul, sans navigation ni ombres. */
+  .app { display: block; }
+  .main { padding: 14mm 12mm; }
+  .card { box-shadow: none; border: 0; padding: 0; }
+  .table-wrap { overflow: visible; }
   .print-stage { padding: 0; background: #fff; min-height: 0; }
   /* 296 mm (et non 297) : évite une seconde page blanche due aux arrondis du moteur d'impression. */
   .sheet { box-shadow: none; margin: 0; width: auto; min-height: 296mm; page-break-after: avoid; }

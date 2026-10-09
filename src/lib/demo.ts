@@ -1,7 +1,7 @@
 import { db, saveProfile } from '../db/db';
 import type { Client, Doc, Ligne, Paiement } from '../db/types';
 import { addDays, shiftMonth, todayISO, yearOf } from './dates';
-import { computeTotals, formatNumero } from './documents';
+import { DOC_DEFAULTS, computeTotals, formatNumero } from './documents';
 import { round2, uid } from './format';
 
 // Générateur pseudo-aléatoire déterministe pour un jeu de démo stable.
@@ -93,6 +93,7 @@ export async function loadDemo(): Promise<void> {
         lignes.push({ id: uid(), description: 'Frais de déplacement', quantite: 1, unite: 'forfait', prixUnitaire: round2(between(30, 90)), tauxTVA: 20 });
       }
       const base: Doc = {
+        ...DOC_DEFAULTS,
         type: 'facture',
         numero: '',
         numeroSeq: 0,
@@ -166,6 +167,7 @@ export async function loadDemo(): Promise<void> {
   const mkDevis = (statut: Doc['statut'], seq: number, offset: number, ci: number, desc: string, pu: number, qte: number): Doc => {
     const dateEmission = addDays(today, offset);
     const d: Doc = {
+      ...DOC_DEFAULTS,
       type: 'devis', numero: formatNumero('D', yearOf(dateEmission), seq), numeroSeq: seq, statut,
       clientId: clientIds[ci],
       client: {

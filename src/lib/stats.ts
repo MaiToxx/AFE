@@ -27,9 +27,10 @@ export function encaissementsParMois(paiements: Paiement[], docsById: Map<number
 export function factureParMois(docs: Doc[], annee: number): number[] {
   const out = Array(12).fill(0) as number[];
   for (const d of docs) {
-    if (d.type !== 'facture' || d.statut === 'brouillon' || d.statut === 'annulee') continue;
+    if (d.type === 'devis' || d.statut === 'brouillon' || d.statut === 'annulee') continue;
     if (yearOf(d.dateEmission) !== annee) continue;
-    out[monthOf(d.dateEmission) - 1] += d.totalHT;
+    // Les avoirs viennent en déduction du CA facturé.
+    out[monthOf(d.dateEmission) - 1] += d.type === 'avoir' ? -d.totalHT : d.totalHT;
   }
   return out;
 }

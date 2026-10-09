@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import BuyLicenceButton from '../components/BuyLicenceButton';
 import { BarChart, Meter, StatTile } from '../components/charts';
 import { Badge, Icon, Notice, PageHeader, Seg } from '../components/ui';
 import { useBaremes, useClients, useDocuments, useLicense, usePaiements, useProfile } from '../db/hooks';
@@ -102,8 +103,13 @@ export default function Dashboard() {
       {(licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid') && (
         <div style={{ marginBottom: 18 }}>
           <Notice tone="critical">
-            {licence.status === 'trial_over' ? "Période d'essai terminée." : 'Licence expirée ou invalide.'} Vos données restent accessibles, mais la finalisation de nouveaux devis et factures est désactivée.{' '}
-            <Link to="/parametres?tab=licence">Activer une licence</Link>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span>
+                {licence.status === 'trial_over' ? "Période d'essai terminée." : 'Licence expirée ou invalide.'} Vos données restent accessibles, mais la finalisation de nouveaux devis et factures est désactivée.{' '}
+                <Link to="/parametres?tab=licence">Activer une licence</Link>
+              </span>
+              <BuyLicenceButton small />
+            </div>
           </Notice>
         </div>
       )}
