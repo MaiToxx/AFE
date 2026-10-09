@@ -7,11 +7,22 @@
     "core:default",
     "dialog:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$APPDATA/**" }, { "path": "$APPDATA" }]
+    },
+    "updater:default",
+    "process:default",
     "fs:allow-write-text-file",
     "fs:allow-read-text-file",
+    "fs:allow-mkdir",
+    "fs:allow-read-dir",
+    "fs:allow-remove",
+    "fs:allow-exists",
     "fs:scope-home-recursive",
     "fs:scope-document-recursive",
     "fs:scope-download-recursive",
-    "fs:scope-desktop-recursive"
+    "fs:scope-desktop-recursive",
+    "fs:scope-appdata-recursive"
   ]
 }

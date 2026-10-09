@@ -13,6 +13,9 @@ import { acreEnd } from '../lib/cotisations';
 import { todayISO, yearOf } from '../lib/dates';
 import { loadDemo } from '../lib/demo';
 import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
+import { dossierSauvegardes, ouvrirDossierSauvegardes, sauvegardeAutomatique } from '../lib/autoBackup';
+import { verifierMiseAJour } from '../lib/updater';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { fmtDate, fmtEUR } from '../lib/format';
 
 type Tab = 'profil' | 'facturation' | 'catalogue' | 'bareme' | 'donnees' | 'licence' | 'apparence';
@@ -345,6 +348,11 @@ function ProfilTab({ form, set }: { form: Profile; set: (p: Partial<Profile>) =>
           onChange={(v) => set({ acre: v })}
         />
         <Check label="J'ai opté pour le versement libératoire de l'impôt sur le revenu" help="L'impôt est alors prélevé par l'URSSAF avec les cotisations (1 %, 1,7 % ou 2,2 % du CA)." checked={form.versementLiberatoire} onChange={(v) => set({ versementLiberatoire: v })} />
+        <div className="form-row">
+          <Field label="Objectif de chiffre d'affaires annuel (€, optionnel)" help="Affiche une jauge et une projection de fin d'année sur le tableau de bord.">
+            <NumInput value={form.objectifCA} onChange={(objectifCA) => set({ objectifCA })} min={0} />
+          </Field>
+        </div>
       </div>
 
       <div className="form-section">
@@ -534,6 +542,33 @@ function BaremeTab() {
   );
 }
 
+function SauvegardeAutoCard() {
+  const { profile } = useProfile();
+  const last = useLiveQuery(() => db.settings.get('lastAutoBackup'), []);
+  const [dossier, setDossier] = useState('');
+  useEffect(() => {
+    dossierSauvegardes().then(setDossier).catch(() => setDossier(''));
+  }, []);
+  return (
+    <div className="card">
+      <h3>Sauvegarde automatique</h3>
+      <p className="small text-2" style={{ margin: '4px 0 8px' }}>
+        Une copie JSON de vos données est enregistrée au lancement (une fois par jour, les 10 dernières sont conservées){dossier ? ` dans ${dossier}` : ''}.
+        {last?.value ? ` Dernière sauvegarde : ${fmtDate(last.value)}.` : ' Aucune sauvegarde pour l’instant.'}
+      </p>
+      <Check label="Activer la sauvegarde automatique" checked={profile.sauvegardeAuto} onChange={(v) => void saveProfile({ sauvegardeAuto: v })} />
+      <div className="actions" style={{ marginTop: 8 }}>
+        <button type="button" className="btn sm" onClick={() => void sauvegardeAutomatique({ ...profile, sauvegardeAuto: true }).then((n) => alert(n ? 'Sauvegarde effectuée.' : 'Une sauvegarde a déjà été faite aujourd’hui.'))}>
+          <Icon name="download" size={15} /> Sauvegarder maintenant
+        </button>
+        <button type="button" className="btn sm" onClick={() => void ouvrirDossierSauvegardes()}>
+          <Icon name="eye" size={15} /> Ouvrir le dossier
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DonneesTab() {
   const docs = useDocuments();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -588,6 +623,7 @@ function DonneesTab() {
           <button type="button" className="btn" onClick={() => fileRef.current?.click()}><Icon name="upload" /> Restaurer une sauvegarde</button>
         </div>
       </div>
+      {isTauri && <SauvegardeAutoCard />}
       <div className="card">
         <h3>Démonstration</h3>
         <p className="small text-2" style={{ margin: '4px 0 12px' }}>Charge un profil fictif, des clients et 20 mois de factures pour découvrir le tableau de bord.</p>
@@ -598,6 +634,30 @@ function DonneesTab() {
         <p className="small text-2" style={{ margin: '4px 0 12px' }}>Efface tout le contenu de l'application sur cet appareil.</p>
         <button type="button" className="btn danger" onClick={onClear}><Icon name="trash" /> Tout effacer</button>
       </div>
+    </div>
+  );
+}
+
+function MiseAJourButton() {
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function check() {
+    setBusy(true);
+    setMsg('Recherche en cours…');
+    const r = await verifierMiseAJour();
+    setBusy(false);
+    setMsg(
+      r.status === 'a_jour' ? 'Vous utilisez la dernière version.'
+        : r.status === 'refusee' ? `La version ${r.version} est disponible ; vous pourrez l'installer plus tard.`
+          : r.status === 'installee' ? 'Mise à jour installée, redémarrage…'
+            : r.status === 'erreur' ? `Vérification impossible (${r.message}).`
+              : '',
+    );
+  }
+  return (
+    <div className="actions">
+      <button type="button" className="btn sm" onClick={check} disabled={busy}><Icon name="download" size={15} /> Rechercher une mise à jour</button>
+      {msg && <span className="small text-2">{msg}</span>}
     </div>
   );
 }
@@ -617,6 +677,11 @@ function ApparenceTab() {
           { value: 'dark', label: 'Sombre' },
         ]}
       />
+      <div className="form-section">
+        <h3>À propos</h3>
+        <p className="small text-2">AFE version {__APP_VERSION__}.</p>
+        {isTauri && <MiseAJourButton />}
+      </div>
       {!isTauri && (
         <div className="form-section">
           <h3>Installer comme application</h3>

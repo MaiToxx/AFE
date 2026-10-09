@@ -6,11 +6,11 @@ import { Badge, Icon, Notice, PageHeader, Seg } from '../components/ui';
 import { useBaremes, useClients, useDocuments, useLicense, usePaiements, useProfile } from '../db/hooks';
 import { ACTIVITES, isTVAVente, isVente, type ActivityKind, type Doc } from '../db/types';
 import { pickBareme } from '../lib/bareme';
-import { monthOf, todayISO, yearOf } from '../lib/dates';
+import { monthOf, parseISO, todayISO, yearOf } from '../lib/dates';
 import { montantPaye, statutInfo } from '../lib/documents';
 import { loadDemo } from '../lib/demo';
 import { MOIS_COURT, fmtCompact, fmtDate, fmtEUR, fmtEUR0 } from '../lib/format';
-import { caParActivite, declarations, encaissementsParMois, factureParMois, sum } from '../lib/stats';
+import { caHT, caParActivite, declarations, encaissementsParMois, factureParMois, sum } from '../lib/stats';
 
 // Lien de démonstration : `#/?demo=1` charge le jeu de démo sur une base vide (une seule fois).
 let demoRequested = false;
@@ -83,6 +83,41 @@ export default function Dashboard() {
 
   const vide = loaded && docs.length === 0 && paiements.length === 0;
   const recDrafts = docs.filter((d) => d.recurrenceId && d.statut === 'brouillon');
+
+  // Projection de fin d'année au rythme actuel (année en cours, après un mois d'activité).
+  const projection = (() => {
+    if (year !== curY || total <= 0) return null;
+    const start = new Date(curY, 0, 1).getTime();
+    const dayOfYear = Math.floor((parseISO(today).getTime() - start) / 86_400_000) + 1;
+    if (dayOfYear < 30) return null;
+    const daysInYear = Math.round((new Date(curY, 11, 31).getTime() - start) / 86_400_000) + 1;
+    return (total / dayOfYear) * daysInYear;
+  })();
+
+  const topClients = useMemo(() => {
+    const map = new Map<number, number>();
+    if (mode === 'encaisse') {
+      for (const p of paiements) {
+        if (yearOf(p.date) !== year) continue;
+        const d = p.factureId ? docsById.get(p.factureId) : undefined;
+        const cid = d?.clientId ?? 0;
+        map.set(cid, (map.get(cid) ?? 0) + caHT(p, docsById));
+      }
+    } else {
+      for (const d of docs) {
+        if (d.type === 'devis' || d.statut === 'brouillon' || d.statut === 'annulee' || yearOf(d.dateEmission) !== year) continue;
+        const cid = d.clientId ?? 0;
+        map.set(cid, (map.get(cid) ?? 0) + (d.type === 'avoir' ? -d.totalHT : d.totalHT));
+      }
+    }
+    const arr = [...map.entries()]
+      .map(([cid, ca]) => ({ nom: cid ? clients.find((c) => c.id === cid)?.nom ?? 'Client supprimé' : 'Sans client', ca }))
+      .filter((x) => x.ca > 0)
+      .sort((a, b) => b.ca - a.ca);
+    const top = arr.slice(0, 5);
+    if (arr.length > 5) top.push({ nom: `Autres (${arr.length - 5})`, ca: arr.slice(5).reduce((s, x) => s + x.ca, 0) });
+    return top;
+  }, [mode, paiements, docs, docsById, clients, year]);
 
   return (
     <>
@@ -224,6 +259,7 @@ export default function Dashboard() {
       </div>
 
       <div className="dash-main">
+        <div className="stack">
         <div className="card">
           <div className="card-head">
             <h2>Chiffre d'affaires mensuel</h2>
@@ -239,14 +275,44 @@ export default function Dashboard() {
             categoryLabel="Mois"
           />
         </div>
+        <div className="card">
+          <div className="card-head">
+            <h2>Top clients {year}</h2>
+            <span className="small muted">part du CA {mode === 'encaisse' ? 'encaissé' : 'facturé'} HT</span>
+          </div>
+          {topClients.length === 0 ? (
+            <p className="small text-2">Aucune donnée sur cette période.</p>
+          ) : (
+            <div className="barlist">
+              {topClients.map((c) => (
+                <div key={c.nom} className="barlist-row">
+                  <span className="barlist-name" title={c.nom}>{c.nom}</span>
+                  <span className="barlist-bar" aria-hidden="true"><i style={{ width: `${(c.ca / topClients[0].ca) * 100}%` }} /></span>
+                  <span className="barlist-val">{fmtEUR0(c.ca)} <span className="muted">· {total > 0 ? Math.round((c.ca / total) * 100) : 0} %</span></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        </div>
 
         <div className="stack">
           <div className="card">
             <div className="card-head">
-              <h2>Seuils {year}</h2>
+              <h2>{profile.objectifCA > 0 ? 'Objectif et seuils' : 'Seuils'} {year}</h2>
               <span className="small muted">sur le CA encaissé</span>
             </div>
             <div className="stack" style={{ gap: 18 }}>
+              {profile.objectifCA > 0 && (
+                <Meter
+                  goal
+                  label={`Objectif de CA ${year}`}
+                  value={caVente + caServices}
+                  max={profile.objectifCA}
+                  format={fmtEUR0}
+                  note={projection && mode === 'encaisse' ? `Projection fin d'année : ${fmtEUR0(projection)}` : undefined}
+                />
+              )}
               {caVente > 0 && caServices > 0 ? (
                 <>
                   <Meter label="Plafond micro — global" value={caVente + caServices} max={bareme.plafondCA.vente} format={fmtEUR0} />

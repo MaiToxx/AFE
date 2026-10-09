@@ -19,7 +19,14 @@ inscription, aucun serveur : toutes les données vivent dans le navigateur (Inde
 - **Tableau de bord** : CA mensuel (année en cours vs précédente), cotisations estimées,
   prochaine déclaration, impayés, jauges de plafond micro et de franchise de TVA.
 - **Barème modifiable** : les taux URSSAF (2024–2026 inclus) sont éditables par année.
-- **Sauvegarde / restauration** JSON, données de démonstration, thème clair/sombre.
+- **Conformité** : avoirs (seule façon légale de corriger une facture transmise), livre des
+  recettes (registre obligatoire, export CSV / impression), mentions 2026 (date ou période de
+  prestation, catégorie d'opération, n° de bon de commande, adresse de livraison).
+- **Productivité** : catalogue de prestations, relances d'impayés (e-mail pré-rempli +
+  historique), factures récurrentes générées automatiquement.
+- **Tableau de bord** : objectif annuel avec projection de fin d'année, top clients.
+- **Sauvegarde / restauration** JSON, sauvegarde automatique quotidienne (version bureau),
+  données de démonstration, thème clair/sombre.
 
 ## Démarrer
 
@@ -60,7 +67,22 @@ Résultats de `desktop:build` :
 
 Dans la version bureau, l'export de sauvegarde ouvre une boîte « Enregistrer sous » native ;
 le service worker PWA est désactivé (inutile hors navigateur). Les données sont stockées dans
-le profil WebView2 de l'application (`%LOCALAPPDATA%\fr.afe.desktop`).
+le profil WebView2 de l'application (`%LOCALAPPDATA%\fr.afe.desktop`), les sauvegardes
+automatiques dans `%APPDATA%\fr.afe.desktop\sauvegardes`.
+
+### Mises à jour automatiques
+
+Au lancement, l'application interroge `https://github.com/MaiToxx/AFE/releases/latest/download/latest.json`
+et propose d'installer une nouvelle version (artefacts signés). Pour publier une version :
+
+1. incrémenter `version` dans `package.json`, `src-tauri/tauri.conf.json` et `src-tauri/Cargo.toml` ;
+2. `git tag v0.2.0 && git push --tags` : le workflow `.github/workflows/release.yml` compile et
+   publie la Release (installateur, signature, `latest.json`).
+
+Secrets GitHub requis : `TAURI_SIGNING_PRIVATE_KEY` (contenu de `scripts/updater/afe-updater.key`,
+**jamais commité**) et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (vide). Le dépôt (ou un dépôt de
+releases dédié) doit être **public** pour que les clients puissent télécharger `latest.json`.
+`npm run desktop:build` lit la clé localement via `scripts/desktop-build.mjs`.
 
 ## Licences (vente du logiciel)
 

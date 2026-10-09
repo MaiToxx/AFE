@@ -213,18 +213,22 @@ function Tooltip({ x, flip, top, title, rows }: { x: number; flip: boolean; top:
   );
 }
 
-export function Meter({ label, value, max, format, marker, note }: {
+export function Meter({ label, value, max, format, marker, note, goal = false }: {
   label: ReactNode;
   value: number;
   max: number;
   format: (n: number) => string;
   marker?: { value: number; label: string };
   note?: ReactNode;
+  /** Objectif à atteindre (vert une fois atteint) plutôt que seuil à ne pas dépasser. */
+  goal?: boolean;
 }) {
   const ratio = max > 0 ? value / max : 0;
   const pct = Math.min(100, Math.max(0, ratio * 100));
-  const severity = ratio >= 1 ? 'critical' : ratio >= 0.8 ? 'warning' : '';
-  const status = ratio >= 1 ? 'Seuil dépassé' : ratio >= 0.8 ? 'Proche du seuil' : 'Sous le seuil';
+  const severity = goal ? (ratio >= 1 ? 'good' : '') : ratio >= 1 ? 'critical' : ratio >= 0.8 ? 'warning' : '';
+  const status = goal
+    ? ratio >= 1 ? 'Objectif atteint' : `${Math.round(ratio * 100)} % de l’objectif`
+    : ratio >= 1 ? 'Seuil dépassé' : ratio >= 0.8 ? 'Proche du seuil' : 'Sous le seuil';
   return (
     <div className={`meter ${severity}`}>
       <div className="meter-head">
@@ -239,7 +243,7 @@ export function Meter({ label, value, max, format, marker, note }: {
       </div>
       <div className="meter-foot">
         <span className={`status ${severity}`}>
-          <Icon name={ratio >= 1 ? 'alert' : ratio >= 0.8 ? 'info' : 'checkCircle'} size={14} />
+          <Icon name={goal ? (ratio >= 1 ? 'checkCircle' : 'info') : ratio >= 1 ? 'alert' : ratio >= 0.8 ? 'info' : 'checkCircle'} size={14} />
           {status}
         </span>
         {note && <span>{note}</span>}
