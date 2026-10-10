@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "AFE — Auto-Entrepreneur",
+        "title": "AFE — Facturation et cotisations",
         "width": 1240,
         "height": 820,
         "minWidth": 720,

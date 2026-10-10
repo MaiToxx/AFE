@@ -17,10 +17,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'icon-maskable.svg'],
       manifest: {
-        name: 'AFE — Auto-Entrepreneur',
+        name: 'AFE — Facturation et cotisations',
         short_name: 'AFE',
         description:
-          "Devis, factures, simulateur de cotisations et suivi du chiffre d'affaires pour auto-entrepreneurs. Fonctionne hors ligne.",
+          "Devis, factures, dépenses, cotisations et impôts pour indépendants et petites sociétés. Fonctionne hors ligne.",
         lang: 'fr',
         start_url: '/',
         display: 'standalone',

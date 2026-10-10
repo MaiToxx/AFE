@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Royaume-Uni — sole trader (Class 4 NI, income tax, VAT threshold).
 const gb: Regime = {
   code: 'GB',
+  pays: 'GB',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Royaume-Uni', en: 'United Kingdom', es: 'Reino Unido', de: 'Vereinigtes Königreich', it: 'Regno Unito', pt: 'Reino Unido', nl: 'Verenigd Koninkrijk' },
   drapeau: '🇬🇧',
   devise: 'GBP',

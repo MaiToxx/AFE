@@ -1,7 +1,8 @@
-import type { Doc, Paiement, Profile } from '../db/types';
+import type { Depense, Doc, Paiement, Profile } from '../db/types';
 import { calculer, paramsFor, periodsOfYear, type Calcul, type Period } from '../regimes/engine';
 import type { Regime, RegimeParams } from '../regimes/types';
 import { monthOf, yearOf } from './dates';
+import { depensesDeductibles } from './depenses';
 
 /**
  * Montant HT d'un encaissement : un paiement sur facture est ramené au prorata HT/TTC
@@ -62,6 +63,7 @@ export function declarations(
   regime: Regime,
   overrides: Record<number, RegimeParams>,
   today: string,
+  depenses: Depense[] = [],
 ): DeclarationRow[] {
   const { params } = paramsFor(regime, overrides, annee);
   return periodsOfYear(annee, profile.frequence, regime.echeance).map((p) => {
@@ -70,7 +72,15 @@ export function declarations(
       if (pay.date < p.start || pay.date > p.end) continue;
       parActivite[pay.activite] = (parActivite[pay.activite] ?? 0) + caHT(pay, docsById);
     }
-    const calcul = calculer(parActivite, { regime, params, profile, periodEnd: p.end, mois: p.mois });
+    const calcul = calculer(parActivite, {
+      regime,
+      params,
+      profile,
+      periodEnd: p.end,
+      mois: p.mois,
+      depenses: params.baseRevenu === 'reel' ? depensesDeductibles(depenses, p.start, p.end, profile.assujettiTVA) : 0,
+      remuneration: regime.remuneration ? profile.remunerationMensuelle * p.mois : 0,
+    });
     const etat: EtatDeclaration = p.end < today ? (p.echeance >= today ? 'a_declarer' : 'passee') : p.start <= today ? 'en_cours' : 'a_venir';
     return { period: p, parActivite, calcul, etat };
   });

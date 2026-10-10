@@ -1,10 +1,11 @@
 import { db, saveProfile } from '../db/db';
 import { normalizeProfile } from '../db/hooks';
-import type { Client, Doc, Ligne, Paiement } from '../db/types';
+import type { CategorieDepense, Client, Depense, Doc, Ligne, MoyenPaiement, Paiement } from '../db/types';
 import { t } from '../i18n';
 import { getRegime } from '../regimes';
 import { addDays, shiftMonth, todayISO, yearOf } from './dates';
 import { DOC_DEFAULTS, computeTotals, formatNumero } from './documents';
+import { ventiler } from './depenses';
 import { round2, uid } from './format';
 
 // Générateur pseudo-aléatoire déterministe pour un jeu de démo stable.
@@ -71,7 +72,7 @@ export async function loadDemo(): Promise<void> {
     await saveProfile({ nom: 'Martin', prenom: 'Camille', activiteLibelle: t('demo.activite') });
   }
   const profile = normalizeProfile((await db.profile.get(1)) ?? undefined);
-  const regime = getRegime(profile.pays);
+  const regime = getRegime(profile.pays, profile.statut);
   const activite = regime.activites.some((a) => a.id === profile.activite) ? profile.activite : regime.activiteDefaut;
   const prefixeF = profile.prefixeFacture || 'F';
   const prefixeD = profile.prefixeDevis || 'D';
@@ -205,4 +206,26 @@ export async function loadDemo(): Promise<void> {
     return d;
   };
   await db.documents.bulkAdd([mkDevis('envoye', 1, -6, 3, 'demo.d1', 3900, 1), mkDevis('envoye', 2, -2, 1, 'demo.d2', 520, 8), mkDevis('refuse', 3, -40, 4, 'demo.d3', 1400, 1)]);
+
+  // Dépenses des douze derniers mois : abonnements, matériel, déplacements, honoraires…
+  const depenses: Omit<Depense, 'id'>[] = [];
+  const dep = (date: string, key: string, fournisseur: string, categorie: CategorieDepense, ttc: number, taux: number, moyen: MoyenPaiement = 'cb') => {
+    if (date > today) return;
+    depenses.push({ date, libelle: t(key), fournisseur, categorie, ...ventiler(ttc, taux), tauxTVA: taux, tvaDeductible: profile.assujettiTVA, deductible: true, moyen, reference: '', notes: '', createdAt: now });
+  };
+  for (let back = 11; back >= 0; back--) {
+    const { annee, mois } = shiftMonth(curY, curM, -back);
+    const d = (day: number) => `${annee}-${String(mois).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    dep(d(3), 'demo.x1', 'Officia SaaS', 'logiciels', 14.99, 20);
+    dep(d(5), 'demo.x3', 'MobilePro', 'telecom', 29.99, 20, 'virement');
+    dep(d(8), 'demo.x8', 'AssurPro', 'assurance', 38, 0, 'virement');
+    dep(d(12), 'demo.x10', 'Compta Conseil', 'honoraires', 95, 20, 'virement');
+    dep(d(28), 'demo.x9', 'NeoBank', 'banque', 12, 0, 'virement');
+    if (back === 11) dep(d(9), 'demo.x2', 'WebHost', 'logiciels', 95.88, 20);
+    if (back === 10) dep(d(14), 'demo.x4', 'TechStore', 'materiel', 1899, 20);
+    if (back === 7) dep(d(21), 'demo.x5', 'Learnify', 'formation', 450, 20);
+    if (back % 4 === 2) dep(d(17), 'demo.x6', 'RailEurope', 'deplacements', 86.5, 10);
+    if (back % 3 === 1) dep(d(19), 'demo.x7', 'Bistrot du Centre', 'repas', 42.3, 10);
+  }
+  await db.depenses.bulkAdd(depenses);
 }

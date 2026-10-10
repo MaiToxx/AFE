@@ -3,18 +3,27 @@
 Application web **offline-first**, installable comme application de bureau (PWA ou exécutable
 Windows). Aucune inscription, aucun serveur : toutes les données vivent sur l'appareil (IndexedDB).
 
-## Multi-pays et multilingue
+## Multi-pays, multi-statuts et multilingue
 
-- **16 régimes nationaux** prêts à l'emploi : France (micro-entrepreneur), Belgique, Suisse,
-  Luxembourg, Allemagne, Autriche, Pays-Bas, Espagne, Italie (forfettario), Portugal, Irlande,
-  Royaume-Uni, Canada, États-Unis, Maroc, plus un régime générique configurable. Le pays
-  d'imposition choisi au premier lancement (modifiable ensuite) détermine la **devise**, la **taxe
-  sur les ventes** (TVA, BTW, MwSt, IVA, VAT, GST/HST, sales tax…) et sa franchise, les
-  **identifiants** à faire figurer (SIRET, numéro d'entreprise, UID, NIF, UTR, EIN, ICE…), les
-  **mentions légales** automatiques, les natures d'activité, la périodicité de déclaration et le
-  **moteur de cotisations** (pourcentage du CA ou du revenu net, montants fixes, barèmes progressifs,
-  minima/plafonds, réductions de début d'activité, options comme l'ACRE ou le versement libératoire,
-  retenue à la source pour l'Espagne, le Portugal…).
+- **16 pays** prêts à l'emploi : France, Belgique, Suisse, Luxembourg, Allemagne, Autriche,
+  Pays-Bas, Espagne, Italie, Portugal, Irlande, Royaume-Uni, Canada, États-Unis, Maroc, plus un
+  régime générique configurable. Le pays d'imposition choisi au premier lancement (modifiable
+  ensuite) détermine la **devise**, la **taxe sur les ventes** (TVA, BTW, MwSt, IVA, VAT, GST/HST,
+  sales tax…) et sa franchise, les **identifiants** à faire figurer (SIRET, numéro d'entreprise,
+  UID, NIF, UTR, EIN, ICE…), les **mentions légales** automatiques, les natures d'activité, la
+  périodicité de déclaration et le **moteur de cotisations** (pourcentage du CA ou du revenu,
+  montants fixes, barèmes progressifs, minima/plafonds, réductions de début d'activité, options
+  comme l'ACRE ou le versement libératoire, retenue à la source pour l'Espagne, le Portugal…).
+- **Plusieurs statuts par pays** (34 régimes au total). France : micro-entrepreneur, entreprise
+  individuelle au réel (BNC/BIC à l'impôt sur le revenu, cotisations TNS sur le bénéfice), EURL/SARL
+  à l'IS (gérant majoritaire TNS) et SASU/SAS à l'IS (président assimilé salarié). Pour chaque autre
+  pays : « indépendant » et « société » (charges sur la rémunération du dirigeant + impôt sur les
+  sociétés sur le bénéfice restant, en estimation documentée).
+- **Registre des dépenses** (achats, frais, abonnements…) avec ventilation HT/taxe/TTC, catégories,
+  déductibilité et export CSV. Pour les régimes au réel, le **bénéfice = recettes encaissées −
+  dépenses déductibles** sert de base aux cotisations et à l'impôt ; pour les assujettis, la **taxe
+  au réel** (collectée à l'encaissement pour les services, à la facturation pour les biens, moins la
+  taxe déductible des dépenses) est calculée par période de déclaration avec report de crédit.
 - **7 langues d'interface** : français, anglais, espagnol, allemand, italien, portugais, néerlandais.
   La langue des documents est indépendante : réglage par défaut dans les paramètres et choix
   **par document** (un client allemand reçoit sa facture en allemand). Dates et montants suivent la
@@ -36,7 +45,9 @@ Windows). Aucune inscription, aucun serveur : toutes les données vivent sur l'a
   n° de commande, adresse de livraison. Impression via la boîte de dialogue du navigateur →
   « Enregistrer au format PDF ».
 - **Cotisations et impôts** : calcul période par période (mensuel, trimestriel ou annuel) sur le CA
-  réellement **encaissé**, simulateur temps réel « CA → net », échéances de déclaration.
+  réellement **encaissé** (ou sur le bénéfice au réel), rémunération du dirigeant et impôt sur les
+  sociétés pour les sociétés, simulateur temps réel « CA → net », échéances de déclaration, tableau
+  de taxe sur les ventes (collectée, déductible, à payer).
 - **Tableau de bord** : CA mensuel (année en cours vs précédente), cotisations estimées, prochaine
   déclaration, impayés, devis en cours, objectif annuel avec projection, top clients, jauges de
   seuils (plafond du régime, franchise de taxe).
@@ -124,10 +135,16 @@ vide, il devient « Demander une licence » et ouvre un e-mail pré-rempli vers 
 ## Ajouter un pays ou une langue
 
 - **Pays** : créer `src/regimes/presets/<code>.ts` (devise, taxe, identifiants, activités,
-  périodicités, mentions, composantes de cotisations, seuils, sources) et l'ajouter à `REGIMES`
+  périodicités, mentions, composantes de cotisations, seuils, sources) et l'ajouter à `PAYS`
   dans `src/regimes/index.ts`. Le moteur (`src/regimes/engine.ts`) sait calculer des pourcentages
-  du CA ou du revenu net, des montants fixes mensuels et des barèmes progressifs (mensuels ou
-  annuels), avec minimum, plafond, réduction de début d'activité et composantes optionnelles.
+  du CA, du revenu (forfaitaire ou réel), de la rémunération du dirigeant ou du résultat, des
+  montants fixes mensuels et des barèmes progressifs (mensuels ou annuels), avec minimum, plafond,
+  réduction de début d'activité et composantes optionnelles.
+- **Statut** : un régime supplémentaire pour un pays existant porte le même `pays` et un `statutId`
+  distinct (voir `fr-ei.ts`, `fr-eurl.ts`, `fr-sasu.ts`) ; une société hors France se décrit en
+  quelques lignes avec la fabrique `societe()` de `presets/societe.ts` (impôt sur les sociétés,
+  charges sur la rémunération, identifiants de société, mention de pied `{forme}`, `{capital}`,
+  `{registre}`).
 - **Langue** : créer `src/i18n/<code>.ts` à partir de `fr.ts` (dictionnaire de référence, toute
   clé manquante retombe sur le français) et déclarer la langue dans `src/i18n/index.tsx`. Les
   textes des régimes (`LText`) acceptent toutes les langues ; `fr` et `en` sont obligatoires.
@@ -138,10 +155,10 @@ vide, il devient « Demander une licence » et ouvre un e-mail pré-rempli vers 
 src/
   db/         modèle de données (types) et base Dexie (IndexedDB), hooks réactifs
   i18n/       dictionnaires d'interface (fr, en, es, de, it, pt, nl)
-  regimes/    régimes par pays (presets/), moteur de cotisations, migration de l'ancien barème
-  lib/        documents (totaux, numérotation), statistiques, relances, récurrences, formats
+  regimes/    régimes par pays et statut (presets/), moteur de cotisations, migration de l'ancien barème
+  lib/        documents (totaux, numérotation), dépenses, taxe au réel, statistiques, relances, récurrences, formats
   components/ interface (layout, premier lancement, graphiques SVG, formulaires, éditeur de barème)
-  pages/      tableau de bord, documents, éditeur, impression, clients, cotisations, recettes, paramètres
+  pages/      tableau de bord, documents, éditeur, impression, clients, cotisations, recettes, dépenses, paramètres
 ```
 
 ## Avertissement

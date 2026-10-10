@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Autriche — Einzelunternehmer, Kleinunternehmerregelung (§ 6 Abs. 1 Z 27 UStG), SVS.
 const at: Regime = {
   code: 'AT',
+  pays: 'AT',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Autriche', en: 'Austria', de: 'Österreich', es: 'Austria', it: 'Austria', pt: 'Áustria', nl: 'Oostenrijk' },
   drapeau: '🇦🇹',
   devise: 'EUR',

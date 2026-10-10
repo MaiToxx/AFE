@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, INDEPENDANT, JOURNAL, TVA_NO } from './common';
 // Régime générique : tout est à paramétrer par l'utilisateur (Paramètres → Barème).
 const xx: Regime = {
   code: 'XX',
+  pays: 'XX',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Autre pays (paramétrable)', en: 'Other country (configurable)', es: 'Otro país (configurable)', de: 'Anderes Land (konfigurierbar)', it: 'Altro paese (configurabile)', pt: 'Outro país (configurável)', nl: 'Ander land (instelbaar)' },
   drapeau: '🌍',
   devise: 'EUR',

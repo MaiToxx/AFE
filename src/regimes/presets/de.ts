@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Allemagne — Einzelunternehmer / Freiberufler, Kleinunternehmerregelung (§ 19 UStG).
 const de: Regime = {
   code: 'DE',
+  pays: 'DE',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Allemagne', en: 'Germany', de: 'Deutschland', es: 'Alemania', it: 'Germania', pt: 'Alemanha', nl: 'Duitsland' },
   drapeau: '🇩🇪',
   devise: 'EUR',

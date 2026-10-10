@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Suisse — indépendant (raison individuelle). Sources : ahv-iv.ch, estv.admin.ch.
 const ch: Regime = {
   code: 'CH',
+  pays: 'CH',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Suisse', en: 'Switzerland', de: 'Schweiz', it: 'Svizzera', es: 'Suiza', pt: 'Suíça', nl: 'Zwitserland' },
   drapeau: '🇨🇭',
   devise: 'CHF',

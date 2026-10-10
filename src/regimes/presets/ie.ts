@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Irlande — sole trader (PRSI class S, USC, income tax).
 const ie: Regime = {
   code: 'IE',
+  pays: 'IE',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Irlande', en: 'Ireland', es: 'Irlanda', de: 'Irland', it: 'Irlanda', pt: 'Irlanda', nl: 'Ierland' },
   drapeau: '🇮🇪',
   devise: 'EUR',

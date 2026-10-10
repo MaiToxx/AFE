@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Luxembourg — indépendant (entreprise individuelle), CCSS.
 const lu: Regime = {
   code: 'LU',
+  pays: 'LU',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Luxembourg', en: 'Luxembourg', de: 'Luxemburg', es: 'Luxemburgo', it: 'Lussemburgo', pt: 'Luxemburgo', nl: 'Luxemburg' },
   drapeau: '🇱🇺',
   devise: 'EUR',

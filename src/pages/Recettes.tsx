@@ -7,7 +7,7 @@ import { todayISO, yearOf } from '../lib/dates';
 import { saveTextFile } from '../lib/desktop';
 import { fmtDate, fmtMoney, moisLong } from '../lib/format';
 import { livreRecettes, recettesCSV, type LigneRecette } from '../lib/recettes';
-import { L } from '../regimes';
+import { L, identifiantPrincipal } from '../regimes';
 import { activiteOf } from '../regimes/engine';
 
 export default function Recettes() {
@@ -46,7 +46,8 @@ export default function Recettes() {
   }, [rows]);
 
   const nom = profile.denomination || `${profile.prenom} ${profile.nom}`.trim();
-  const idPrincipal = regime.identifiants[0] ? profile.identifiants[regime.identifiants[0].id] : '';
+  const principal = identifiantPrincipal(regime);
+  const idPrincipal = principal ? profile.identifiants[principal.id] : '';
   const titre = L(regime.livreRecettes, lang);
 
   async function exporter() {
@@ -57,7 +58,7 @@ export default function Recettes() {
     <>
       <PageHeader
         title={titre}
-        subtitle={`${t('ledger.subtitle', { year })}${nom ? ` — ${nom}` : ''}${idPrincipal ? ` — ${L(regime.identifiants[0].label, lang)} ${idPrincipal}` : ''}`}
+        subtitle={`${t('ledger.subtitle', { year })}${nom ? ` — ${nom}` : ''}${idPrincipal && principal ? ` — ${L(principal.label, lang)} ${idPrincipal}` : ''}`}
         actions={
           <>
             <select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label={t('common.year')} className="no-print">

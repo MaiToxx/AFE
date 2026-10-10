@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import { DEFAULT_BAREMES, baremeEqualsDefault } from '../lib/bareme';
 import { todayISO } from '../lib/dates';
 import { convertBaremeFR } from '../regimes/migrate';
-import type { Client, Doc, LegacyBareme, Paiement, Prestation, Profile, Recurrence, RegimeParamsRow, Relance, Setting } from './types';
+import type { Client, Depense, Doc, LegacyBareme, Paiement, Prestation, Profile, Recurrence, RegimeParamsRow, Relance, Setting } from './types';
 
 export class AfeDB extends Dexie {
   profile!: Table<Profile, number>;
@@ -14,6 +14,7 @@ export class AfeDB extends Dexie {
   relances!: Table<Relance, number>;
   recurrences!: Table<Recurrence, number>;
   regimeParams!: Table<RegimeParamsRow, string>;
+  depenses!: Table<Depense, number>;
 
   constructor() {
     super('afe');
@@ -54,6 +55,8 @@ export class AfeDB extends Dexie {
       });
     // v5 : l'ancienne table des barèmes n'est plus utilisée.
     this.version(5).stores({ baremes: null });
+    // v6 : registre des dépenses (régimes au réel, taxe déductible).
+    this.version(6).stores({ depenses: '++id, date, categorie' });
   }
 }
 
@@ -72,6 +75,9 @@ export const DEFAULT_PROFILE: Profile = {
   siteWeb: '',
   activiteLibelle: '',
   pays: 'FR',
+  statut: '',
+  remunerationMensuelle: 0,
+  periodiciteTVA: '',
   langueDocuments: 'fr',
   devise: 'EUR',
   identifiants: {},
@@ -130,7 +136,7 @@ export async function saveProfile(patch: Partial<Profile>): Promise<void> {
 
 export interface Backup {
   app: 'afe';
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   exportedAt: string;
   profile: Profile | null;
   clients: Client[];
@@ -144,10 +150,11 @@ export interface Backup {
   catalogue?: Prestation[];
   relances?: Relance[];
   recurrences?: Recurrence[];
+  depenses?: Depense[];
 }
 
 export async function exportBackup(): Promise<Backup> {
-  const [profile, clients, documents, paiements, regimeParams, settings, catalogue, relances, recurrences] = await Promise.all([
+  const [profile, clients, documents, paiements, regimeParams, settings, catalogue, relances, recurrences, depenses] = await Promise.all([
     db.profile.get(1),
     db.clients.toArray(),
     db.documents.toArray(),
@@ -157,10 +164,11 @@ export async function exportBackup(): Promise<Backup> {
     db.catalogue.toArray(),
     db.relances.toArray(),
     db.recurrences.toArray(),
+    db.depenses.toArray(),
   ]);
   return {
     app: 'afe',
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     profile: profile ?? null,
     clients,
@@ -171,10 +179,11 @@ export async function exportBackup(): Promise<Backup> {
     catalogue,
     relances,
     recurrences,
+    depenses,
   };
 }
 
-const DATA_TABLES = () => [db.profile, db.clients, db.documents, db.paiements, db.regimeParams, db.catalogue, db.relances, db.recurrences];
+const DATA_TABLES = () => [db.profile, db.clients, db.documents, db.paiements, db.regimeParams, db.catalogue, db.relances, db.recurrences, db.depenses];
 
 export async function importBackup(text: string): Promise<void> {
   const data = JSON.parse(text) as Partial<Backup>;
@@ -207,6 +216,7 @@ export async function importBackup(text: string): Promise<void> {
     await db.catalogue.bulkAdd(data.catalogue ?? []);
     await db.relances.bulkAdd(data.relances ?? []);
     await db.recurrences.bulkAdd(data.recurrences ?? []);
+    await db.depenses.bulkAdd(data.depenses ?? []);
     // Les réglages locaux sont conservés ; ceux de la sauvegarde (licence) viennent par-dessus.
     if (data.settings?.length) await db.settings.bulkPut(data.settings.filter((s) => s.key !== 'langue'));
   });

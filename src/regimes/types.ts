@@ -34,6 +34,15 @@ export interface Seuil {
 export type TypeComposante = 'pct_ca' | 'pct_net' | 'fixe_mois' | 'tranches_mois' | 'tranches_annuel';
 export type Categorie = 'social' | 'impot' | 'autre';
 export type OptionComposante = 'acre' | 'vl' | 'doubleImmatriculation';
+/**
+ * Base d'une composante : chiffre d'affaires, revenu (forfaitaire ou réel), rémunération du dirigeant
+ * ou résultat (revenu − rémunération − composantes sociales), ce dernier servant à l'impôt.
+ */
+export type BaseComposante = 'ca' | 'net' | 'remuneration' | 'resultat';
+/** Revenu retenu : part forfaitaire du CA (micro) ou réel (recettes − dépenses déductibles). */
+export type BaseRevenu = 'forfait' | 'reel';
+/** Personne physique (indépendant) ou société (dirigeant rémunéré, impôt sur les sociétés). */
+export type Forme = 'personne' | 'societe';
 
 export interface Tranche {
   /** Borne supérieure (revenu annuel pour `tranches_annuel`, mensuel pour `tranches_mois`) ; null = sans limite. */
@@ -49,6 +58,8 @@ export interface Composante {
   label: LText;
   categorie: Categorie;
   type: TypeComposante;
+  /** Base de calcul ; par défaut le CA pour pct_ca, le revenu pour les autres types. */
+  base?: BaseComposante;
   /** Taux (%) par défaut pour pct_ca / pct_net. */
   taux?: number;
   tauxParActivite?: Record<string, number>;
@@ -80,19 +91,29 @@ export interface RegimeParams {
   tvaDefaut: number;
   /** Part du CA considérée comme revenu net (1 = pas d'abattement), globale ou par activité. */
   coefficientNet: number | Record<string, number>;
+  /** `reel` : le revenu est recettes − dépenses déductibles (le coefficient est ignoré). Défaut : forfait. */
+  baseRevenu?: BaseRevenu;
   composantes: Composante[];
 }
 
 export type RegleEcheance = { type: 'jours'; jours: number } | { type: 'fin_mois_suivant' };
 
 export interface Regime {
+  /** Identifiant unique du régime (FR, FR-EI, BE-SOC…) ; clé des surcharges de paramètres. */
   code: string;
+  /** Pays d'imposition (ISO 3166-1, XX = générique). */
+  pays: string;
+  /** Statut au sein du pays (micro, ei, eurl, sasu, independant, societe…) ; le premier déclaré est le défaut. */
+  statutId: string;
+  forme: Forme;
   nom: LText;
   drapeau: string;
   devise: string;
   /** Langues proposées en priorité pour ce pays (la première sert de défaut). */
   langues: Lang[];
   statut: LText;
+  /** Rémunération du dirigeant saisie dans le profil (sociétés) : libellé et aide du champ. */
+  remuneration?: { label: LText; aide: LText };
   activites: Activite[];
   activiteDefaut: string;
   natures?: { id: Nature; label: LText }[];
@@ -104,11 +125,19 @@ export interface Regime {
     franchisePossible: boolean;
     mentionFranchise: LText;
     mentionNumero: LText;
+    /** Périodicités de déclaration de la taxe (défaut : celles du régime + annuelle). */
+    periodicites?: Frequence[];
+    periodiciteDefaut?: Frequence;
+    /** Échéance de la déclaration de taxe (défaut : celle du régime). */
+    echeance?: RegleEcheance;
   };
   mentions: {
     /** Pénalités de retard (clients professionnels). Vide : rien n'est imprimé. */
     retard: LText;
-    /** Mention de bas de page spécifique (ex. France : dispensé d'immatriculation). */
+    /**
+     * Mention de bas de page spécifique (ex. France : dispensé d'immatriculation). Peut contenir des
+     * `{identifiant}` remplacés par les identifiants du profil (forme, capital, registre…).
+     */
     pied?: LText;
     /** Natures pour lesquelles la mention de pied s'affiche (toutes si absent). */
     piedNatures?: Nature[];

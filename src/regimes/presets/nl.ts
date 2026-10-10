@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Pays-Bas — zzp'er / eenmanszaak, kleineondernemersregeling (KOR).
 const nl: Regime = {
   code: 'NL',
+  pays: 'NL',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Pays-Bas', en: 'Netherlands', nl: 'Nederland', de: 'Niederlande', es: 'Países Bajos', it: 'Paesi Bassi', pt: 'Países Baixos' },
   drapeau: '🇳🇱',
   devise: 'EUR',

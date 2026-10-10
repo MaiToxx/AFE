@@ -1,10 +1,11 @@
 // Moteur de calcul des prélèvements, indépendant du pays : périodes de déclaration,
-// composantes (pourcentage du CA ou du revenu, forfaits, tranches) et seuils.
+// composantes (pourcentage du CA ou du revenu, forfaits, tranches), bases (CA, revenu forfaitaire ou
+// réel, rémunération du dirigeant, résultat) et seuils.
 import type { Profile } from '../db/types';
 import { getLang, tIn, type Lang } from '../i18n';
 import { addDays, addMonths, endOfMonth, monthOf, shiftMonth, startOfMonth, yearOf } from '../lib/dates';
 import { moisLong } from '../lib/format';
-import type { Activite, Composante, Frequence, Groupe, RegimeParams, Regime, RegleEcheance, Seuil } from './types';
+import type { Activite, BaseComposante, Composante, Frequence, Groupe, RegimeParams, Regime, RegleEcheance, Seuil } from './types';
 
 /** Période de déclaration. */
 export interface Period {
@@ -70,6 +71,17 @@ export function periodOf(iso: string, frequence: Frequence, regle: RegleEcheance
   return periods.find((p) => iso >= p.start && iso <= p.end) ?? periods[0];
 }
 
+/** Périodicité et échéance des déclarations de taxe sur les ventes (défauts : celles du régime). */
+export function tvaFrequence(regime: Regime, profile: Pick<Profile, 'periodiciteTVA' | 'frequence'>): Frequence {
+  const list = regime.tva.periodicites ?? [...new Set<Frequence>([...regime.periodicites, 'annuelle'])];
+  if (profile.periodiciteTVA && list.includes(profile.periodiciteTVA)) return profile.periodiciteTVA;
+  return regime.tva.periodiciteDefaut ?? (list.includes(profile.frequence) ? profile.frequence : list[0]);
+}
+
+export function tvaEcheance(regime: Regime): RegleEcheance {
+  return regime.tva.echeance ?? regime.echeance;
+}
+
 /** Paramètres applicables à une année : surcharge utilisateur, sinon préréglage (année exacte ou plus proche antérieure). */
 export function paramsFor(regime: Regime, overrides: Record<number, RegimeParams>, annee: number): { params: RegimeParams; annee: number; surcharge: boolean } {
   const annuel = !(0 in regime.params);
@@ -132,6 +144,11 @@ export function composanteActive(c: Composante, profile: Profile): boolean {
   return true;
 }
 
+/** Base effective d'une composante (explicite, sinon CA pour pct_ca et revenu pour le reste). */
+export function baseDe(c: Composante): BaseComposante {
+  return c.base ?? (c.type === 'pct_ca' ? 'ca' : 'net');
+}
+
 export interface CalcOptions {
   regime: Regime;
   params: RegimeParams;
@@ -140,11 +157,15 @@ export interface CalcOptions {
   periodEnd: string;
   /** Nombre de mois couverts (1, 3 ou 12). */
   mois: number;
+  /** Dépenses déductibles de la période (régimes au réel). */
+  depenses?: number;
+  /** Rémunération versée au dirigeant sur la période (sociétés). */
+  remuneration?: number;
 }
 
 export interface CalcLigne {
   composante: Composante;
-  /** Base de calcul (CA ou revenu net) utilisée. */
+  /** Base de calcul utilisée (CA, revenu, rémunération ou résultat). */
   base: number;
   /** Taux affiché (%), si pertinent. */
   taux?: number;
@@ -154,12 +175,19 @@ export interface CalcLigne {
 
 export interface Calcul {
   ca: number;
+  /** Dépenses déductibles prises en compte (0 en régime forfaitaire). */
+  depenses: number;
+  /** Revenu retenu : CA × coefficient (forfait) ou CA − dépenses (réel). */
   net: number;
+  remuneration: number;
+  /** Résultat soumis à l'impôt : revenu − rémunération − composantes sociales. */
+  resultat: number;
   lignes: CalcLigne[];
   social: number;
   impot: number;
   autre: number;
   total: number;
+  /** Ce qui reste après dépenses et prélèvements (rémunération comprise pour une société). */
   reste: number;
   tauxEffectif: number;
   reduit: boolean;
@@ -190,35 +218,48 @@ function progressif(base: number, tranches: Composante['tranches']): number {
   return total;
 }
 
-/** Calcule les prélèvements d'une période à partir du CA encaissé par activité. */
+/** Calcule les prélèvements d'une période à partir du CA encaissé par activité (et des dépenses au réel). */
 export function calculer(caParActivite: Record<string, number>, o: CalcOptions): Calcul {
   const { regime, params, profile, mois } = o;
   const entries = Object.entries(caParActivite).filter(([, v]) => v > 0);
   const ca = entries.reduce((s, [, v]) => s + v, 0);
-  const net = entries.reduce((s, [a, v]) => s + v * coefficientNet(params, a), 0);
+  const reel = params.baseRevenu === 'reel';
+  const depenses = reel ? Math.max(0, o.depenses ?? 0) : 0;
+  const net = reel ? Math.max(0, ca - depenses) : entries.reduce((s, [a, v]) => s + v * coefficientNet(params, a), 0);
+  const remuneration = regime.remuneration ? Math.max(0, o.remuneration ?? 0) : 0;
   const lignes: CalcLigne[] = [];
   let reduit = false;
+  let socialCumule = 0;
+  let resultat = 0;
 
-  for (const c of params.composantes) {
-    if (!composanteActive(c, profile)) continue;
+  const valeurDe = (b: BaseComposante) => (b === 'ca' ? ca : b === 'net' ? net : b === 'remuneration' ? remuneration : resultat);
+
+  const traiter = (c: Composante) => {
+    const b = baseDe(c);
+    const valeur = valeurDe(b);
     let montant = 0;
     let base = 0;
     let taux: number | undefined;
     switch (c.type) {
       case 'pct_ca': {
-        base = ca;
-        let somme = 0;
-        for (const [a, v] of entries) somme += (v * tauxPour(c, regime, a, profile)) / 100;
-        montant = somme;
-        taux = ca > 0 ? (somme / ca) * 100 : tauxPour(c, regime, profile.activite, profile);
+        base = valeur;
+        if (b === 'ca') {
+          let somme = 0;
+          for (const [a, v] of entries) somme += (v * tauxPour(c, regime, a, profile)) / 100;
+          montant = somme;
+          taux = ca > 0 ? (somme / ca) * 100 : tauxPour(c, regime, profile.activite, profile);
+        } else {
+          taux = tauxPour(c, regime, profile.activite, profile);
+          montant = (valeur * taux) / 100;
+        }
         break;
       }
       case 'pct_net': {
-        let b = net;
-        if (c.baseMax !== undefined) b = Math.min(b, (c.baseMax * mois) / 12);
-        base = b;
+        let v = valeur;
+        if (c.baseMax !== undefined) v = Math.min(v, (c.baseMax * mois) / 12);
+        base = v;
         taux = c.taux ?? 0;
-        montant = (b * taux) / 100;
+        montant = (v * taux) / 100;
         break;
       }
       case 'fixe_mois':
@@ -226,14 +267,14 @@ export function calculer(caParActivite: Record<string, number>, o: CalcOptions):
         montant = (c.montant ?? 0) * mois;
         break;
       case 'tranches_mois': {
-        const mensuel = mois > 0 ? net / mois : net;
+        const mensuel = mois > 0 ? valeur / mois : valeur;
         base = mensuel;
         const tr = (c.tranches ?? []).find((x) => x.jusqua === null || mensuel <= x.jusqua) ?? (c.tranches ?? [])[(c.tranches ?? []).length - 1];
         montant = (tr?.montant ?? 0) * mois;
         break;
       }
       case 'tranches_annuel': {
-        const annuel = mois > 0 ? (net * 12) / mois : net;
+        const annuel = mois > 0 ? (valeur * 12) / mois : valeur;
         base = annuel;
         montant = (progressif(annuel, c.tranches) * mois) / 12;
         taux = annuel > 0 ? (progressif(annuel, c.tranches) / annuel) * 100 : undefined;
@@ -249,16 +290,38 @@ export function calculer(caParActivite: Record<string, number>, o: CalcOptions):
       r = true;
       reduit = true;
     }
-    if (montant === 0 && c.type !== 'fixe_mois' && ca === 0) continue;
+    // Une ligne nulle sans base n'est pas affichée (sauf forfait fixe).
+    if (montant === 0 && c.type !== 'fixe_mois' && valeur === 0) return;
+    if (c.categorie === 'social') socialCumule += montant;
     lignes.push({ composante: c, base, taux, montant, reduit: r });
-  }
+  };
+
+  const actives = params.composantes.filter((c) => composanteActive(c, profile));
+  // Les composantes assises sur le résultat (impôt) se calculent après les autres.
+  for (const c of actives.filter((c) => baseDe(c) !== 'resultat')) traiter(c);
+  resultat = Math.max(0, net - remuneration - socialCumule);
+  for (const c of actives.filter((c) => baseDe(c) === 'resultat')) traiter(c);
 
   const somme = (cat: Composante['categorie']) => lignes.filter((l) => l.composante.categorie === cat).reduce((s, l) => s + l.montant, 0);
   const social = somme('social');
   const impot = somme('impot');
   const autre = somme('autre');
   const total = social + impot + autre;
-  return { ca, net, lignes, social, impot, autre, total, reste: ca - total, tauxEffectif: ca > 0 ? (total / ca) * 100 : 0, reduit };
+  return {
+    ca,
+    depenses,
+    net,
+    remuneration,
+    resultat,
+    lignes,
+    social,
+    impot,
+    autre,
+    total,
+    reste: ca - depenses - total,
+    tauxEffectif: ca > 0 ? (total / ca) * 100 : 0,
+    reduit,
+  };
 }
 
 /** Seuils applicables au profil, avec le CA annuel qui leur correspond. */

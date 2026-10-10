@@ -5,7 +5,7 @@ import { colon, useI18n } from '../i18n';
 import { L } from '../regimes';
 import { paramsFor } from '../regimes/engine';
 import type { Composante, Groupe, Nature, Regime, RegimeParams, Tranche } from '../regimes/types';
-import { Field, Icon, Notice, NumInput } from './ui';
+import { Field, Icon, Notice, NumInput, Seg } from './ui';
 
 /** Éditeur générique des paramètres d'un régime (seuils, TVA, coefficient, composantes). */
 export default function BaremeEditor({ regime, anneeInitiale }: { regime: Regime; anneeInitiale: number }) {
@@ -114,8 +114,19 @@ export default function BaremeEditor({ regime, anneeInitiale }: { regime: Regime
 
       <div className="form-section">
         <h3>{t('bareme.netCoef')}</h3>
-        <p className="small text-2">{t('bareme.netCoefHelp')}</p>
-        <div className="form-row">
+        <p className="small text-2">{t('bareme.baseRevenuHelp')}</p>
+        <div style={{ marginBottom: 12 }}>
+          <Seg<'forfait' | 'reel'>
+            value={form.baseRevenu ?? 'forfait'}
+            onChange={(v) => upd((p) => { p.baseRevenu = v; })}
+            options={[
+              { value: 'forfait', label: t('bareme.forfait') },
+              { value: 'reel', label: t('bareme.reel') },
+            ]}
+          />
+        </div>
+        {(form.baseRevenu ?? 'forfait') === 'forfait' && <p className="small text-2">{t('bareme.netCoefHelp')}</p>}
+        <div className="form-row" style={{ display: (form.baseRevenu ?? 'forfait') === 'forfait' ? undefined : 'none' }}>
           {typeof form.coefficientNet === 'number' ? (
             <Field label={t('bareme.allActivities')}>{num(form.coefficientNet, (n) => upd((p) => { p.coefficientNet = n; }))}</Field>
           ) : (
@@ -136,6 +147,7 @@ export default function BaremeEditor({ regime, anneeInitiale }: { regime: Regime
               <h4>
                 {L(c.label, lang)}
                 <span className="tag">{t(`bareme.type.${c.type}`)}</span>
+                {c.base && <span className="tag">{t(`cotis.base.${c.base}`)}</span>}
                 <span className="tag">{t(`bareme.cat.${c.categorie}`)}</span>
                 {c.optionnel && <span className="tag">{t('bareme.optional')}</span>}
               </h4>

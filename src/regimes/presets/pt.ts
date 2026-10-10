@@ -4,6 +4,9 @@ import { ESTIMATION } from './common';
 // Portugal — trabalhador independente (recibos verdes), regime simplificado.
 const pt: Regime = {
   code: 'PT',
+  pays: 'PT',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Portugal', en: 'Portugal', pt: 'Portugal', es: 'Portugal', de: 'Portugal', it: 'Portogallo', nl: 'Portugal' },
   drapeau: '🇵🇹',
   devise: 'EUR',

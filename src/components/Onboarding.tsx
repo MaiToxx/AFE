@@ -2,37 +2,46 @@ import { useState } from 'react';
 import { saveProfile } from '../db/db';
 import { LANGS, useI18n, type Lang } from '../i18n';
 import { loadDemo } from '../lib/demo';
-import { L, REGIMES, getRegime } from '../regimes';
+import { L, PAYS, getRegime, statutsDe } from '../regimes';
 import { paramsFor } from '../regimes/engine';
 import { Icon } from './ui';
 
-/** Premier lancement : langue de l'interface et pays d'imposition, qui pilotent tout le reste. */
+/** Premier lancement : langue de l'interface, pays d'imposition et statut, qui pilotent tout le reste. */
 export default function Onboarding() {
-  const { t, lang, setLang } = useI18n();
+  const { t, tn, lang, setLang } = useI18n();
   const [pays, setPays] = useState('');
+  const [statut, setStatut] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const statuts = pays ? statutsDe(pays) : [];
+  const regime = pays ? getRegime(pays, statut) : null;
+
+  function choisirPays(code: string) {
+    setPays(code);
+    setStatut(statutsDe(code)[0].statutId);
+  }
+
   async function continuer(avecDemo: boolean) {
-    const code = pays || 'FR';
-    const regime = getRegime(code);
-    const { params } = paramsFor(regime, {}, new Date().getFullYear());
+    const r = regime ?? getRegime('FR');
+    const { params } = paramsFor(r, {}, new Date().getFullYear());
     setBusy(true);
     await saveProfile({
-      pays: code,
-      langueDocuments: regime.langues.includes(lang) ? lang : regime.langues[0],
-      devise: regime.devise,
-      activite: regime.activiteDefaut,
-      frequence: regime.periodiciteDefaut,
+      pays: r.pays,
+      statut: r.statutId,
+      langueDocuments: r.langues.includes(lang) ? lang : r.langues[0],
+      devise: r.devise,
+      activite: r.activiteDefaut,
+      frequence: r.periodiciteDefaut,
+      periodiciteTVA: '',
+      remunerationMensuelle: 0,
       tauxTVA: params.tvaDefaut,
-      retenueSource: regime.options.retenue?.tauxDefaut ?? 0,
-      assujettiTVA: !regime.tva.franchisePossible,
+      retenueSource: r.options.retenue?.tauxDefaut ?? 0,
+      assujettiTVA: !r.tva.franchisePossible,
     });
     if (avecDemo) await loadDemo();
     setBusy(false);
     if (!avecDemo) window.location.hash = '#/parametres';
   }
-
-  const regime = pays ? getRegime(pays) : null;
 
   return (
     <div className="onboarding">
@@ -65,22 +74,42 @@ export default function Onboarding() {
         <div className="field" style={{ marginBottom: 16 }}>
           <span className="label">{t('onb.country')}</span>
           <div className="country-grid">
-            {REGIMES.map((r) => (
-              <button key={r.code} type="button" className={`country${pays === r.code ? ' active' : ''}`} aria-pressed={pays === r.code} aria-label={`${L(r.nom, lang)} — ${L(r.statut, lang)}`} onClick={() => setPays(r.code)}>
-                <span className="flag" aria-hidden="true">{r.drapeau}</span>
-                <span>
-                  <b>{L(r.nom, lang)}</b>
-                  <small>{L(r.statut, lang)}</small>
-                </span>
-              </button>
-            ))}
+            {PAYS.map((r) => {
+              const n = statutsDe(r.pays).length;
+              const sous = n > 1 ? tn('onb.statutsCount', n) : L(r.statut, lang);
+              return (
+                <button key={r.pays} type="button" className={`country${pays === r.pays ? ' active' : ''}`} aria-pressed={pays === r.pays} aria-label={`${L(r.nom, lang)} — ${sous}`} onClick={() => choisirPays(r.pays)}>
+                  <span className="flag" aria-hidden="true">{r.drapeau}</span>
+                  <span>
+                    <b>{L(r.nom, lang)}</b>
+                    <small>{sous}</small>
+                  </span>
+                </button>
+              );
+            })}
           </div>
-          {regime && (
-            <span className="help">
-              {t('onb.summary', { devise: regime.devise, tva: regime.tva.nom })}
-            </span>
-          )}
         </div>
+
+        {statuts.length > 1 && (
+          <div className="field" style={{ marginBottom: 16 }}>
+            <span className="label">{t('onb.statut')}</span>
+            <div className="chip-row">
+              {statuts.map((r) => (
+                <button key={r.code} type="button" className={`chip${statut === r.statutId ? ' active' : ''}`} aria-pressed={statut === r.statutId} onClick={() => setStatut(r.statutId)}>
+                  {L(r.statut, lang)}
+                </button>
+              ))}
+            </div>
+            <span className="help">{t('onb.statutHelp')}</span>
+          </div>
+        )}
+
+        {regime && (
+          <p className="help" style={{ marginBottom: 16 }}>
+            {t('onb.summary', { devise: regime.devise, tva: regime.tva.nom })}
+            {regime.forme === 'societe' ? ` · ${t('onb.summarySociete')}` : regime.params[Object.keys(regime.params).map(Number).sort((a, b) => b - a)[0]].baseRevenu === 'reel' ? ` · ${t('onb.summaryReel')}` : ''}
+          </p>
+        )}
 
         <div className="actions">
           <button type="button" className="btn primary" disabled={!pays || busy} onClick={() => continuer(false)}>

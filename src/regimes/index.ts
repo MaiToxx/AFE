@@ -6,6 +6,9 @@ import ch from './presets/ch';
 import de from './presets/de';
 import es from './presets/es';
 import fr from './presets/fr';
+import frEi from './presets/fr-ei';
+import frEurl from './presets/fr-eurl';
+import frSasu from './presets/fr-sasu';
 import gb from './presets/gb';
 import ie from './presets/ie';
 import it from './presets/it';
@@ -13,14 +16,46 @@ import lu from './presets/lu';
 import ma from './presets/ma';
 import nl from './presets/nl';
 import pt from './presets/pt';
+import { SOCIETES } from './presets/societe';
 import us from './presets/us';
 import xx from './presets/xx';
 import type { LText, Regime } from './types';
 
-export const REGIMES: Regime[] = [fr, be, ch, lu, de, at, nl, es, it, pt, ie, gb, ca, us, ma, xx];
+/** Un régime par pays : le statut par défaut (indépendant / micro-entrepreneur). */
+export const PAYS: Regime[] = [fr, be, ch, lu, de, at, nl, es, it, pt, ie, gb, ca, us, ma, xx];
 
-export function getRegime(code: string): Regime {
-  return REGIMES.find((r) => r.code === code) ?? fr;
+const EXTRAS: Record<string, Regime[]> = { FR: [frEi, frEurl, frSasu] };
+
+/** Tous les régimes, groupés par pays ; le premier de chaque pays est le défaut. */
+export const REGIMES: Regime[] = PAYS.flatMap((p) => [p, ...(EXTRAS[p.pays] ?? []), ...SOCIETES.filter((s) => s.pays === p.pays)]);
+
+/** Statuts disponibles dans un pays (le premier est le défaut). */
+export function statutsDe(pays: string): Regime[] {
+  const list = REGIMES.filter((r) => r.pays === pays);
+  return list.length ? list : [fr];
+}
+
+/** Régime d'un pays et d'un statut ; statut inconnu → défaut du pays ; pays inconnu → France. */
+export function getRegime(pays: string, statut?: string): Regime {
+  const list = statutsDe(pays);
+  return list.find((r) => r.statutId === statut) ?? list[0];
+}
+
+/** Identifiants consommés par la mention de pied (`{forme}`, `{capital}`, `{registre}`…). */
+export function identifiantsPied(regime: Regime): Set<string> {
+  const tpl = regime.mentions.pied?.fr ?? '';
+  return new Set([...tpl.matchAll(/\{(\w+)\}/g)].map((m) => m[1]));
+}
+
+/** Identifiant principal à afficher (SIRET, numéro d'entreprise…) : le premier hors mention de pied et hors taxe. */
+export function identifiantPrincipal(regime: Regime): Regime['identifiants'][number] | undefined {
+  const pied = identifiantsPied(regime);
+  return regime.identifiants.find((i) => !pied.has(i.id) && !i.pourTva) ?? regime.identifiants[0];
+}
+
+/** Régime par son code unique (surcharges de paramètres). */
+export function regimeParCode(code: string): Regime | undefined {
+  return REGIMES.find((r) => r.code === code);
 }
 
 /** Texte localisé : langue demandée, puis anglais, puis français. */

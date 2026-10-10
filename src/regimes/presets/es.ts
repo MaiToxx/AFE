@@ -4,6 +4,9 @@ import { ESTIMATION } from './common';
 // Espagne — trabajador autónomo (estimación directa simplificada), RETA par tranches de revenu.
 const es: Regime = {
   code: 'ES',
+  pays: 'ES',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Espagne', en: 'Spain', es: 'España', de: 'Spanien', it: 'Spagna', pt: 'Espanha', nl: 'Spanje' },
   drapeau: '🇪🇸',
   devise: 'EUR',

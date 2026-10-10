@@ -7,7 +7,7 @@ import { evaluate, trialStatus, verifyKey, type LicenseStatus } from '../lib/lic
 import { getRegime } from '../regimes';
 import type { Regime, RegimeParams } from '../regimes/types';
 import { DEFAULT_PROFILE, db } from './db';
-import type { Client, Doc, Paiement, Prestation, Profile, Recurrence, Relance, Setting } from './types';
+import type { Client, Depense, Doc, Paiement, Prestation, Profile, Recurrence, Relance, Setting } from './types';
 
 /** Complète un profil enregistré avec les valeurs par défaut et les champs migrés. */
 export function normalizeProfile(row: Partial<Profile> | undefined): Profile {
@@ -16,9 +16,11 @@ export function normalizeProfile(row: Partial<Profile> | undefined): Profile {
   if (p.siret && !identifiants.siret) identifiants.siret = p.siret;
   if (p.numeroTVA && !identifiants.tva) identifiants.tva = p.numeroTVA;
   if (!p.pays) p.pays = 'FR';
+  // Statut inconnu ou absent (profils antérieurs à 0.4) : statut par défaut du pays.
+  p.statut = getRegime(p.pays, p.statut).statutId;
   if (!isLang(p.langueDocuments)) p.langueDocuments = 'fr';
-  if (!p.devise) p.devise = getRegime(p.pays).devise;
-  return { ...p, identifiants, optionsRegime: p.optionsRegime ?? {} };
+  if (!p.devise) p.devise = getRegime(p.pays, p.statut).devise;
+  return { ...p, identifiants, optionsRegime: p.optionsRegime ?? {}, remunerationMensuelle: Number(p.remunerationMensuelle) || 0 };
 }
 
 /** Profil fusionné avec les valeurs par défaut. `loaded` passe à true une fois IndexedDB lu. */
@@ -30,16 +32,20 @@ export function useProfile(): { profile: Profile; loaded: boolean; exists: boole
   }, [row]);
 }
 
-/** Régime du pays d'imposition du profil. */
+/** Régime (pays + statut) du profil. */
 export function useRegime(): Regime {
   const { profile } = useProfile();
-  return useMemo(() => getRegime(profile.pays), [profile.pays]);
+  return useMemo(() => getRegime(profile.pays, profile.statut), [profile.pays, profile.statut]);
 }
 
-/** Surcharges de paramètres de l'utilisateur pour un pays, par année (0 = unique). */
-export function useRegimeOverrides(pays: string): Record<number, RegimeParams> {
-  const rows = useLiveQuery(() => db.regimeParams.where('pays').equals(pays).toArray(), [pays], []) ?? [];
+/** Surcharges de paramètres de l'utilisateur pour un régime (code), par année (0 = unique). */
+export function useRegimeOverrides(code: string): Record<number, RegimeParams> {
+  const rows = useLiveQuery(() => db.regimeParams.where('pays').equals(code).toArray(), [code], []) ?? [];
   return useMemo(() => Object.fromEntries(rows.map((r) => [r.annee, r.params])), [rows]);
+}
+
+export function useDepenses(): Depense[] {
+  return useLiveQuery(() => db.depenses.toArray(), [], []) ?? [];
 }
 
 export function useSetting(key: string): string | undefined {

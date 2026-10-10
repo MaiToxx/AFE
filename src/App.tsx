@@ -8,6 +8,7 @@ import { setFormatting } from './lib/format';
 import Clients from './pages/Clients';
 import Cotisations from './pages/Cotisations';
 import Dashboard from './pages/Dashboard';
+import Depenses from './pages/Depenses';
 import DocumentEditor from './pages/DocumentEditor';
 import DocumentPrint from './pages/DocumentPrint';
 import Documents from './pages/Documents';
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="clients" element={<Clients />} />
             <Route path="cotisations" element={<Cotisations />} />
             <Route path="recettes" element={<Recettes />} />
+            <Route path="depenses" element={<Depenses />} />
             <Route path="parametres" element={<Parametres />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

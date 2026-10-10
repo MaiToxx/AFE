@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // États-Unis — sole proprietor / independent contractor (self-employment tax, federal income tax).
 const us: Regime = {
   code: 'US',
+  pays: 'US',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'États-Unis', en: 'United States', es: 'Estados Unidos', de: 'Vereinigte Staaten', it: 'Stati Uniti', pt: 'Estados Unidos', nl: 'Verenigde Staten' },
   drapeau: '🇺🇸',
   devise: 'USD',

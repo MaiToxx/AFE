@@ -8,7 +8,7 @@ import PrestationForm from '../components/PrestationForm';
 import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
 import { clearAll, db, deleteSetting, exportBackup, importBackup, saveProfile, setSetting } from '../db/db';
 import { useCatalogue, useDocuments, useLicense, useProfile, useRegime, useRegimeOverrides } from '../db/hooks';
-import type { Nature, Prestation, Profile } from '../db/types';
+import type { Frequence, Nature, Prestation, Profile } from '../db/types';
 import { colon, LANGS, useI18n, type Lang } from '../i18n';
 import { dossierSauvegardes, ouvrirDossierSauvegardes, sauvegardeAutomatique } from '../lib/autoBackup';
 import { todayISO, yearOf } from '../lib/dates';
@@ -18,8 +18,8 @@ import { fmtDate, fmtMoney } from '../lib/format';
 import { PURCHASE_URL, SUPPORT_EMAIL, TRIAL_DAYS, evaluate, verifyKey, type LicenseStatus } from '../lib/license';
 import { sauvegarderCleFichier, supprimerCleFichier } from '../lib/licenseStore';
 import { verifierMiseAJour } from '../lib/updater';
-import { DEVISES, L, REGIMES, getRegime } from '../regimes';
-import { composanteActive, paramsFor } from '../regimes/engine';
+import { DEVISES, L, PAYS, getRegime, statutsDe } from '../regimes';
+import { composanteActive, paramsFor, tvaFrequence } from '../regimes/engine';
 import type { Regime } from '../regimes/types';
 
 type Tab = 'profil' | 'facturation' | 'catalogue' | 'bareme' | 'donnees' | 'licence' | 'apparence';
@@ -93,7 +93,7 @@ export default function Parametres() {
         ))}
       </div>
 
-      {tab === 'profil' && <ProfilTab form={form} set={set} regime={getRegime(form.pays)} />}
+      {tab === 'profil' && <ProfilTab form={form} set={set} regime={getRegime(form.pays, form.statut)} />}
       {tab === 'facturation' && <FacturationTab form={form} set={set} regime={regime} />}
       {tab === 'catalogue' && <CatalogueTab tauxTVA={form.tauxTVA} />}
       {tab === 'bareme' && <BaremeEditor key={regime.code} regime={regime} anneeInitiale={yearOf(todayISO())} />}
@@ -110,25 +110,49 @@ function ProfilTab({ form, set, regime }: { form: Profile; set: (p: Partial<Prof
   const { params } = paramsFor(regime, overrides, yearOf(todayISO()));
   const optionnelles = params.composantes.filter((c) => c.optionnel);
 
-  function changerPays(code: string) {
-    const r = getRegime(code);
+  /** Valeurs pilotées par le régime, réappliquées quand le pays ou le statut change. */
+  const defautsDe = (r: Regime): Partial<Profile> => {
     const p = paramsFor(r, {}, yearOf(todayISO())).params;
-    if (code !== form.pays && !confirm(t('settings.confirmCountry', { pays: L(r.nom, lang) }))) return;
-    set({
-      pays: code,
-      devise: r.devise,
-      activite: r.activiteDefaut,
-      frequence: r.periodiciteDefaut,
-      tauxTVA: p.tvaDefaut,
+    return {
+      pays: r.pays,
+      statut: r.statutId,
+      activite: r.activites.some((a) => a.id === form.activite) ? form.activite : r.activiteDefaut,
+      frequence: r.periodicites.includes(form.frequence) ? form.frequence : r.periodiciteDefaut,
+      periodiciteTVA: '',
+      tauxTVA: p.tvaTaux.includes(form.tauxTVA) ? form.tauxTVA : p.tvaDefaut,
       retenueSource: r.options.retenue?.tauxDefaut ?? 0,
+      assujettiTVA: r.tva.franchisePossible ? form.assujettiTVA : true,
+      optionsRegime: {},
+      acre: r.options.acre ? form.acre : false,
+      versementLiberatoire: r.options.vl ? form.versementLiberatoire : false,
+      remunerationMensuelle: r.remuneration ? form.remunerationMensuelle : 0,
+    };
+  };
+
+  function changerPays(code: string) {
+    if (code === form.pays) return;
+    const r = getRegime(code);
+    if (!confirm(t('settings.confirmCountry', { pays: L(r.nom, lang) }))) return;
+    set({
+      ...defautsDe(r),
+      devise: r.devise,
       assujettiTVA: !r.tva.franchisePossible,
       langueDocuments: r.langues.includes(form.langueDocuments) ? form.langueDocuments : r.langues[0],
-      optionsRegime: {},
       acre: false,
       versementLiberatoire: false,
       identifiants: {},
     });
   }
+
+  function changerStatut(statutId: string) {
+    if (statutId === form.statut) return;
+    const r = getRegime(form.pays, statutId);
+    if (!confirm(t('settings.confirmStatut', { statut: L(r.statut, lang) }))) return;
+    set(defautsDe(r));
+  }
+
+  const statuts = statutsDe(form.pays);
+  const tvaPeriodicites = regime.tva.periodicites ?? [...new Set<Frequence>([...regime.periodicites, 'annuelle'])];
 
   return (
     <div className="card">
@@ -137,8 +161,15 @@ function ProfilTab({ form, set, regime }: { form: Profile; set: (p: Partial<Prof
         <div className="form-row">
           <Field label={t('settings.taxCountry')} help={t('settings.taxCountryHelp')}>
             <select value={form.pays} onChange={(e) => changerPays(e.target.value)}>
-              {REGIMES.map((r) => (
-                <option key={r.code} value={r.code}>{r.drapeau} {L(r.nom, lang)} — {L(r.statut, lang)}</option>
+              {PAYS.map((r) => (
+                <option key={r.pays} value={r.pays}>{r.drapeau} {L(r.nom, lang)}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label={t('settings.statut')} help={t('settings.statutHelp')}>
+            <select value={regime.statutId} onChange={(e) => changerStatut(e.target.value)}>
+              {statuts.map((r) => (
+                <option key={r.code} value={r.statutId}>{L(r.statut, lang)}</option>
               ))}
             </select>
           </Field>
@@ -150,6 +181,7 @@ function ProfilTab({ form, set, regime }: { form: Profile; set: (p: Partial<Prof
             </select>
           </Field>
         </div>
+        <p className="small muted" style={{ marginTop: 8 }}>{L(regime.avertissement, lang)}</p>
       </div>
 
       <div className="form-section">
@@ -224,6 +256,11 @@ function ProfilTab({ form, set, regime }: { form: Profile; set: (p: Partial<Prof
           />
         ))}
         <div className="form-row">
+          {regime.remuneration && (
+            <Field label={L(regime.remuneration.label, lang)} help={L(regime.remuneration.aide, lang)}>
+              <NumInput value={form.remunerationMensuelle} onChange={(remunerationMensuelle) => set({ remunerationMensuelle })} min={0} />
+            </Field>
+          )}
           <Field label={t('settings.goal')} help={t('settings.goalHelp')}>
             <NumInput value={form.objectifCA} onChange={(objectifCA) => set({ objectifCA })} min={0} />
           </Field>
@@ -242,6 +279,13 @@ function ProfilTab({ form, set, regime }: { form: Profile; set: (p: Partial<Prof
             <Field label={t('settings.vatDefaultRate', { tva: regime.tva.nom })}>
               <NumInput value={form.tauxTVA} onChange={(tauxTVA) => set({ tauxTVA })} min={0} />
               <span className="help">{t('settings.vatRatesAvailable')}{colon(lang)}{params.tvaTaux.join(' %, ')} %</span>
+            </Field>
+            <Field label={t('settings.vatPeriodicity', { tva: regime.tva.nom })} help={t('settings.vatPeriodicityHelp')}>
+              <select value={form.periodiciteTVA || tvaFrequence(regime, form)} onChange={(e) => set({ periodiciteTVA: e.target.value as Frequence })}>
+                {tvaPeriodicites.map((p) => (
+                  <option key={p} value={p}>{t(`freq.${p}`)}</option>
+                ))}
+              </select>
             </Field>
           </div>
         )}

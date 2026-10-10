@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Belgique — indépendant à titre principal (personne physique). Sources : inasti.be, finances.belgium.be.
 const be: Regime = {
   code: 'BE',
+  pays: 'BE',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Belgique', en: 'Belgium', nl: 'België', de: 'Belgien', es: 'Bélgica', it: 'Belgio', pt: 'Bélgica' },
   drapeau: '🇧🇪',
   devise: 'EUR',

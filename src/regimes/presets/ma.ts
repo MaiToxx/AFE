@@ -4,6 +4,9 @@ import { ESTIMATION } from './common';
 // Maroc — auto-entrepreneur (loi 114-13) : impôt libératoire sur le CA.
 const ma: Regime = {
   code: 'MA',
+  pays: 'MA',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Maroc', en: 'Morocco', es: 'Marruecos', de: 'Marokko', it: 'Marocco', pt: 'Marrocos', nl: 'Marokko' },
   drapeau: '🇲🇦',
   devise: 'MAD',

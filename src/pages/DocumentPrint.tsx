@@ -8,7 +8,7 @@ import type { ClientSnapshot } from '../db/types';
 import { tIn, useI18n, type Lang } from '../i18n';
 import { ligneTotalHT, montantPaye, normalizeDoc } from '../lib/documents';
 import { fmtDate, fmtMoneyIn, fmtNum } from '../lib/format';
-import { L, localeFor } from '../regimes';
+import { L, identifiantPrincipal, identifiantsPied, localeFor } from '../regimes';
 import { groupeOf } from '../regimes/engine';
 
 export default function DocumentPrint() {
@@ -74,12 +74,22 @@ export default function DocumentPrint() {
       : tl(groupeOf(regime, doc.activite) === 'vente' ? 'print.deliveryDate' : 'print.serviceDate', { date: date(doc.prestationDebut) })
     : '';
   const categorie = groupeOf(regime, doc.activite) === 'vente' ? tl('print.catGoods') : tl('print.catServices');
-  const identifiants = regime.identifiants.filter((i) => profile.identifiants[i.id] && (!i.pourTva || profile.assujettiTVA));
+  // Les identifiants repris dans la mention de pied (forme, capital, registre…) n'apparaissent qu'en pied.
+  const pied = identifiantsPied(regime);
+  const identifiants = regime.identifiants.filter((i) => !pied.has(i.id) && profile.identifiants[i.id] && (!i.pourTva || profile.assujettiTVA));
+  const principal = identifiantPrincipal(regime);
   const mentionFranchise = L(regime.tva.mentionFranchise, lang);
   const mentionRetard = L(regime.mentions.retard, lang);
-  const mentionPied = regime.mentions.pied && (!regime.mentions.piedNatures || regime.mentions.piedNatures.includes(profile.nature)) ? L(regime.mentions.pied, lang) : '';
+  // Mention de pied du régime ; les `{identifiant}` (forme, capital, registre…) sont remplis depuis le profil.
+  const mentionPied = (() => {
+    if (!regime.mentions.pied || (regime.mentions.piedNatures && !regime.mentions.piedNatures.includes(profile.nature))) return '';
+    const tpl = L(regime.mentions.pied, lang);
+    const ids = [...tpl.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+    if (ids.length && !ids.some((id) => profile.identifiants[id]?.trim())) return '';
+    return tpl.replace(/\{(\w+)\}/g, (_, id: string) => profile.identifiants[id]?.trim() || '—');
+  })();
   const mentionRetenue = L(regime.mentions.retenue, lang);
-  const idFooter = regime.identifiants[0] && profile.identifiants[regime.identifiants[0].id] ? `${L(regime.identifiants[0].label, lang)} ${profile.identifiants[regime.identifiants[0].id]}` : '';
+  const idFooter = principal && profile.identifiants[principal.id] ? `${L(principal.label, lang)} ${profile.identifiants[principal.id]}` : '';
 
   return (
     <div className="print-stage">

@@ -26,8 +26,14 @@ export interface Profile {
   telephone: string;
   siteWeb: string;
   activiteLibelle: string;
-  /** Pays d'imposition (code du régime : FR, BE, CH…, XX = générique). */
+  /** Pays d'imposition (FR, BE, CH…, XX = générique). */
   pays: string;
+  /** Statut au sein du pays (micro, ei, eurl, sasu, independant, societe…) ; vide = statut par défaut du pays. */
+  statut: string;
+  /** Rémunération nette mensuelle que se verse le dirigeant (sociétés). */
+  remunerationMensuelle: number;
+  /** Périodicité des déclarations de taxe sur les ventes ('' = défaut du régime). */
+  periodiciteTVA: Frequence | '';
   /** Langue par défaut des documents émis. */
   langueDocuments: Lang;
   devise: string;
@@ -154,6 +160,63 @@ export interface Paiement {
   libelle: string;
 }
 
+export type CategorieDepense =
+  | 'achats'
+  | 'fournitures'
+  | 'logiciels'
+  | 'loyer'
+  | 'telecom'
+  | 'deplacements'
+  | 'repas'
+  | 'vehicule'
+  | 'assurance'
+  | 'honoraires'
+  | 'formation'
+  | 'materiel'
+  | 'banque'
+  | 'cotisations'
+  | 'autre';
+
+/** Dépense professionnelle (achat, frais) : base du bénéfice au réel et de la taxe déductible. */
+export interface Depense {
+  id?: number;
+  date: string; // ISO, date de paiement
+  libelle: string;
+  fournisseur: string;
+  categorie: CategorieDepense;
+  montantHT: number;
+  tauxTVA: number; // %
+  montantTVA: number;
+  montantTTC: number;
+  /** Taxe récupérable (assujettis) : entre dans la taxe déductible de la période. */
+  tvaDeductible: boolean;
+  /** Déductible du résultat : entre dans le calcul du bénéfice. */
+  deductible: boolean;
+  moyen: MoyenPaiement;
+  reference: string;
+  notes: string;
+  createdAt: string;
+}
+
+/** Catégories de dépenses ; `deductible` : déductibilité du résultat proposée par défaut. */
+export const CATEGORIES_DEPENSE: { value: CategorieDepense; key: string; deductible: boolean }[] = [
+  { value: 'achats', key: 'cat.achats', deductible: true },
+  { value: 'fournitures', key: 'cat.fournitures', deductible: true },
+  { value: 'logiciels', key: 'cat.logiciels', deductible: true },
+  { value: 'materiel', key: 'cat.materiel', deductible: true },
+  { value: 'loyer', key: 'cat.loyer', deductible: true },
+  { value: 'telecom', key: 'cat.telecom', deductible: true },
+  { value: 'deplacements', key: 'cat.deplacements', deductible: true },
+  { value: 'repas', key: 'cat.repas', deductible: true },
+  { value: 'vehicule', key: 'cat.vehicule', deductible: true },
+  { value: 'assurance', key: 'cat.assurance', deductible: true },
+  { value: 'honoraires', key: 'cat.honoraires', deductible: true },
+  { value: 'formation', key: 'cat.formation', deductible: true },
+  { value: 'banque', key: 'cat.banque', deductible: true },
+  { value: 'cotisations', key: 'cat.cotisations', deductible: false },
+  { value: 'autre', key: 'cat.autre', deductible: true },
+];
+
 /** Prestation enregistrée au catalogue, insérable en une ligne de document. */
 export interface Prestation {
   id?: number;
@@ -199,9 +262,10 @@ export interface Setting {
   value: string;
 }
 
-/** Paramètres de régime modifiés par l'utilisateur (clé = `PAYS:année`, année 0 si non annuel). */
+/** Paramètres de régime modifiés par l'utilisateur (clé = `CODE:année`, année 0 si non annuel). */
 export interface RegimeParamsRow {
   cle: string;
+  /** Code du régime (FR, FR-EI, BE-SOC…) ; le nom de colonne est historique. */
   pays: string;
   annee: number;
   params: RegimeParams;

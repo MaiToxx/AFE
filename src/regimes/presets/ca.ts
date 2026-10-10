@@ -4,6 +4,9 @@ import { ACTIVITES_BASE, ESTIMATION } from './common';
 // Canada — travailleur autonome (fédéral ; TPS/TVH, RPC).
 const ca: Regime = {
   code: 'CA',
+  pays: 'CA',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Canada', en: 'Canada', es: 'Canadá', de: 'Kanada', it: 'Canada', pt: 'Canadá', nl: 'Canada' },
   drapeau: '🇨🇦',
   devise: 'CAD',

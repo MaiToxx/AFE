@@ -4,6 +4,9 @@ import { ESTIMATION } from './common';
 // Italie — partita IVA en regime forfettario (L. 190/2014).
 const it: Regime = {
   code: 'IT',
+  pays: 'IT',
+  statutId: 'independant',
+  forme: 'personne',
   nom: { fr: 'Italie', en: 'Italy', it: 'Italia', es: 'Italia', de: 'Italien', pt: 'Itália', nl: 'Italië' },
   drapeau: '🇮🇹',
   devise: 'EUR',

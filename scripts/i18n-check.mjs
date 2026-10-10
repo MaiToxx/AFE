@@ -18,14 +18,14 @@ const files = [];
 })(src);
 
 // Clés référencées : littéraux 'prefixe.suite' aux préfixes connus (appels t(), tables key: '…', ternaires).
-const PREFIXES = 'common|nav|onb|dash|docs|doc|editor|print|clients|cotis|sim|bareme|ledger|settings|licence|update|relance|recurrence|catalogue|chart|meter|status|moyen|freq|period|demo|backup';
+const PREFIXES = 'common|nav|onb|dash|docs|doc|editor|print|clients|cotis|sim|bareme|ledger|settings|licence|update|relance|recurrence|catalogue|chart|meter|status|moyen|freq|period|demo|backup|exp|cat|tva';
 const literal = new RegExp(`'((?:${PREFIXES})\\.[a-zA-Z0-9_.]+)'`, 'g');
 const used = new Set();
 for (const f of files) for (const m of read(f).matchAll(literal)) used.add(m[1]);
 // Clés construites dynamiquement (t(`freq.${x}`), period.quarter.${q}, bareme.type.${c.type}…).
 ['freq.mensuelle', 'freq.trimestrielle', 'freq.annuelle', 'period.quarter.1', 'period.quarter.2', 'period.quarter.3', 'period.quarter.4',
   'bareme.type.pct_ca', 'bareme.type.pct_net', 'bareme.type.fixe_mois', 'bareme.type.tranches_mois', 'bareme.type.tranches_annuel',
-  'bareme.cat.social', 'bareme.cat.impot', 'bareme.cat.autre', 'bareme.group.vente', 'bareme.group.services'].forEach((k) => used.add(k));
+  'bareme.cat.social', 'bareme.cat.impot', 'bareme.cat.autre', 'bareme.group.vente', 'bareme.group.services', 'cotis.base.ca', 'cotis.base.net', 'cotis.base.remuneration', 'cotis.base.resultat'].forEach((k) => used.add(k));
 // Faux positifs : noms de fichiers ou de réglages qui ressemblent à des clés.
 ['licence.key'].forEach((k) => used.delete(k));
 

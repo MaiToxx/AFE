@@ -68,6 +68,9 @@ const params = (bnc: number): RegimeParams => ({
 
 const fr: Regime = {
   code: 'FR',
+  pays: 'FR',
+  statutId: 'micro',
+  forme: 'personne',
   nom: { fr: 'France', en: 'France', es: 'Francia', de: 'Frankreich', it: 'Francia', pt: 'França', nl: 'Frankrijk' },
   drapeau: '🇫🇷',
   devise: 'EUR',

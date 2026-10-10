@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import BuyLicenceButton from '../components/BuyLicenceButton';
 import { BarChart, Meter, StatTile } from '../components/charts';
 import { Badge, Icon, Notice, PageHeader, Seg } from '../components/ui';
-import { useClients, useDocuments, useLicense, usePaiements, useProfile, useRegime, useRegimeOverrides } from '../db/hooks';
+import { useClients, useDepenses, useDocuments, useLicense, usePaiements, useProfile, useRegime, useRegimeOverrides } from '../db/hooks';
 import type { Doc } from '../db/types';
 import { colon, useI18n } from '../i18n';
 import { monthOf, parseISO, todayISO, yearOf } from '../lib/dates';
@@ -23,9 +23,10 @@ export default function Dashboard() {
   const { t, tn, lang, locale } = useI18n();
   const { profile, loaded } = useProfile();
   const regime = useRegime();
-  const overrides = useRegimeOverrides(profile.pays);
+  const overrides = useRegimeOverrides(regime.code);
   const docs = useDocuments();
   const paiements = usePaiements();
+  const depenses = useDepenses();
   const clients = useClients();
   const licence = useLicense();
   const today = todayISO();
@@ -57,8 +58,11 @@ export default function Dashboard() {
   const prevToDate = sum(prev.slice(0, upto));
   const delta = prevToDate > 0 ? ((sum(cur.slice(0, upto)) - prevToDate) / prevToDate) * 100 : null;
 
-  const rows = useMemo(() => declarations(year, paiements, docsById, profile, regime, overrides, today), [year, paiements, docsById, profile, regime, overrides, today]);
+  const rows = useMemo(() => declarations(year, paiements, docsById, profile, regime, overrides, today, depenses), [year, paiements, docsById, profile, regime, overrides, today, depenses]);
   const prelevements = rows.reduce((s, r) => s + r.calcul.total, 0);
+  const depensesAnnee = rows.reduce((s, r) => s + r.calcul.depenses, 0);
+  const benefice = rows.reduce((s, r) => s + r.calcul.net, 0);
+  const reel = rows.some((r) => r.calcul.depenses > 0) || paramsFor(regime, overrides, year).params.baseRevenu === 'reel';
   const next = rows.find((r) => r.etat === 'a_declarer') ?? rows.find((r) => r.etat === 'en_cours');
 
   const factures = docs.filter((d) => d.type === 'facture');
@@ -215,6 +219,13 @@ export default function Dashboard() {
             )}
           </span>
         </div>
+        {reel && (
+          <StatTile
+            label={t('dash.tileProfit', { year })}
+            value={fmtCompact(benefice)}
+            sub={<Link to="/depenses">{t('dash.expensesLink', { montant: fmtCompact(depensesAnnee) })}</Link>}
+          />
+        )}
         <StatTile label={t('dash.tileContrib', { year })} value={fmtCompact(prelevements)} sub={<Link to="/cotisations">{t('dash.tileContribLink')}</Link>} />
         <StatTile
           label={t('dash.tileNext')}
