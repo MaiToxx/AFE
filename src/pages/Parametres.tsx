@@ -601,6 +601,10 @@ function LicenceTab() {
         return;
       }
       const ev = evaluate(r.payload);
+      if (ev.status === 'invalid') {
+        setMsg({ tone: 'critical', text: t(ev.reasonKey) });
+        return;
+      }
       if (ev.status === 'expired') {
         setMsg({ tone: 'critical', text: t('licence.err.expired', { date: fmtDate(r.payload.expires ?? '') }) });
         return;

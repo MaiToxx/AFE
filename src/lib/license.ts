@@ -3,6 +3,7 @@
 // seule la clé publique est embarquée ici. Les messages sont des clés de traduction.
 import { addDays, parseISO, todayISO } from './dates';
 import { PUBLIC_KEY_JWK } from './license-public-key';
+import { REVOKED } from './revoked';
 
 export const TRIAL_DAYS = 14;
 /** Page de vente (checkout Lemon Squeezy, Gumroad, Stripe…). Vide : le bouton d'achat ouvre un e-mail vers SUPPORT_EMAIL. */
@@ -81,6 +82,8 @@ export async function verifyKey(raw: string): Promise<{ ok: true; payload: Licen
 
 /** Statut d'une licence dont la signature est déjà vérifiée. */
 export function evaluate(license: LicensePayload, today = todayISO(), appVersion = __APP_VERSION__): LicenseStatus {
+  // Révocation décidée par le vendeur (remboursement, clé diffusée) : liste embarquée à chaque version.
+  if (REVOKED.includes(license.id)) return { status: 'invalid', reasonKey: 'licence.err.revoked' };
   if (license.expires && license.expires < today) return { status: 'expired', license };
   if (license.maxMajor !== undefined && majorOf(appVersion) > license.maxMajor) return { status: 'unsupported', license };
   return { status: 'licensed', license };

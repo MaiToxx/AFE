@@ -1,2 +1,5 @@
 private.jwk
 registre.csv
+registre*.csv*
+sauvegardes/
+*.tmp

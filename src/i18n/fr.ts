@@ -717,6 +717,7 @@ const fr: Dict = {
   'licence.err.signature': 'La signature de la clé est invalide.',
   'licence.err.expired': 'Cet abonnement a expiré le {date}.',
   'licence.err.unsupported': 'Cette licence couvre les versions jusqu’à {major}.x ; vous utilisez la version {version}.',
+  'licence.err.revoked': 'Cette licence a été révoquée. Contactez l’assistance si vous pensez qu’il s’agit d’une erreur.',
 
   // Mises à jour
   'update.title': 'Mise à jour disponible',

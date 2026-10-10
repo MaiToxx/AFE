@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AFE — Gestion des licences</title>
+    <link rel="icon" href="/icone.svg" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="barre">
+      <div class="marque">
+        <img src="/icone.svg" alt="" width="30" height="30" />
+        <div>
+          <strong>AFE</strong>
+          <span>Gestion des licences</span>
+        </div>
+      </div>
+      <div class="barre-droite">
+        <span id="etat-cle" class="pastille"></span>
+        <button type="button" id="quitter" class="btn fantome">Quitter</button>
+      </div>
+    </header>
+
+    <main>
+      <div id="bandeau"></div>
+      <section id="tuiles" class="tuiles" aria-label="Vue d’ensemble"></section>
+
+      <section class="carte">
+        <div class="carte-tete">
+          <h1>Licences</h1>
+          <span class="pousser"></span>
+          <button type="button" id="verifier" class="btn">Vérifier une clé</button>
+          <button type="button" id="nouvelle" class="btn principal">Nouvelle licence</button>
+        </div>
+        <div class="outils">
+          <input type="search" id="recherche" placeholder="Nom, e-mail, numéro, note…" aria-label="Rechercher une licence" />
+          <div id="filtres" class="seg" role="group" aria-label="Filtrer par état"></div>
+          <label class="case" title="Afficher aussi les anciennes clés remplacées par un renouvellement"><input type="checkbox" id="historique" /> Clés remplacées</label>
+        </div>
+        <div class="tableau-cadre">
+          <table>
+            <thead>
+              <tr>
+                <th><button type="button" class="tri" data-tri="nom">Titulaire</button></th>
+                <th>Formule</th>
+                <th><button type="button" class="tri" data-tri="date">Émise le</button></th>
+                <th><button type="button" class="tri" data-tri="expire">Expire le</button></th>
+                <th>État</th>
+                <th>Nº</th>
+                <th><span class="visuellement-cache">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="lignes"></tbody>
+          </table>
+        </div>
+        <p id="vide" class="vide" hidden></p>
+      </section>
+      <p id="pied" class="pied"></p>
+    </main>
+
+    <dialog id="dialogue" aria-labelledby="dialogue-titre"></dialog>
+    <div id="messages" class="messages" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

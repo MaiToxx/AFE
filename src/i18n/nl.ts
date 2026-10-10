@@ -696,6 +696,7 @@ const nl: Dict = {
   'licence.err.signature': 'De handtekening van de sleutel is ongeldig.',
   'licence.err.expired': 'Dit abonnement is verlopen op {date}.',
   'licence.err.unsupported': 'Deze licentie dekt versies tot {major}.x; u gebruikt versie {version}.',
+  'licence.err.revoked': 'Deze licentie is ingetrokken. Neem contact op met de ondersteuning als u denkt dat dit een vergissing is.',
 
   'update.title': 'Update beschikbaar',
   'update.available': 'Versie {version} is beschikbaar (u gebruikt {current}).',

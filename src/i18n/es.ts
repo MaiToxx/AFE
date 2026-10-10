@@ -696,6 +696,7 @@ const es: Dict = {
   'licence.err.signature': 'La firma de la clave no es válida.',
   'licence.err.expired': 'Esta suscripción caducó el {date}.',
   'licence.err.unsupported': 'Esta licencia cubre las versiones hasta la {major}.x; usted usa la versión {version}.',
+  'licence.err.revoked': 'Esta licencia ha sido revocada. Contacte con la asistencia si cree que se trata de un error.',
 
   'update.title': 'Actualización disponible',
   'update.available': 'La versión {version} está disponible (usted usa la {current}).',

@@ -11,7 +11,8 @@
     "typecheck": "tsc -b --noEmit",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "node scripts/desktop-build.mjs"
+    "desktop:build": "node scripts/desktop-build.mjs",
+    "licences": "node scripts/license/admin.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.1",

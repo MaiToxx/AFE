@@ -696,6 +696,7 @@ const en: Dict = {
   'licence.err.signature': 'The key signature is invalid.',
   'licence.err.expired': 'This subscription expired on {date}.',
   'licence.err.unsupported': 'This licence covers versions up to {major}.x; you are using version {version}.',
+  'licence.err.revoked': 'This licence has been revoked. Contact support if you think this is a mistake.',
 
   'update.title': 'Update available',
   'update.available': 'Version {version} is available (you are using {current}).',

@@ -4,3 +4,5 @@
 *.ico binary
 *.icns binary
 *.pdf binary
+# Les fichiers de commandes Windows exigent des fins de ligne CRLF.
+*.cmd text eol=crlf

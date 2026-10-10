@@ -696,6 +696,7 @@ const it: Dict = {
   'licence.err.signature': 'La firma della chiave non è valida.',
   'licence.err.expired': 'Questo abbonamento è scaduto il {date}.',
   'licence.err.unsupported': 'Questa licenza copre le versioni fino alla {major}.x; stai usando la versione {version}.',
+  'licence.err.revoked': 'Questa licenza è stata revocata. Contatta l’assistenza se pensi che si tratti di un errore.',
 
   'update.title': 'Aggiornamento disponibile',
   'update.available': 'È disponibile la versione {version} (stai usando la {current}).',

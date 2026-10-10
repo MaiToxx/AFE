@@ -696,6 +696,7 @@ const de: Dict = {
   'licence.err.signature': 'Die Signatur des Schlüssels ist ungültig.',
   'licence.err.expired': 'Dieses Abonnement ist am {date} abgelaufen.',
   'licence.err.unsupported': 'Diese Lizenz gilt für Versionen bis {major}.x; Sie verwenden Version {version}.',
+  'licence.err.revoked': 'Diese Lizenz wurde widerrufen. Wenden Sie sich an den Support, wenn Sie dies für einen Irrtum halten.',
 
   'update.title': 'Update verfügbar',
   'update.available': 'Version {version} ist verfügbar (Sie verwenden {current}).',

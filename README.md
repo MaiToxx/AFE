@@ -118,9 +118,11 @@ releases dédié) doit être **public** pour que les clients puissent téléchar
 L'application se vérifie **hors ligne** avec des clés de licence signées (ECDSA P-256) :
 14 jours d'essai complet, puis la finalisation de nouveaux devis/factures requiert une licence
 (les données restent toujours consultables et exportables). L'outillage vendeur est dans
-[`scripts/license/`](scripts/license/README.md) : `keygen.mjs` (une fois), puis
-`issue.mjs --name "…" --email …` après chaque vente. **`scripts/license/private.jwk` est secret
-et n'est jamais commité** — sauvegardez-le hors ligne. Le bouton « Acheter une licence »
+[`scripts/license/`](scripts/license/README.md) : `keygen.mjs` (une fois), puis l'**interface de
+gestion des licences** — double-clic sur `licences.cmd` ou `npm run licences` — pour émettre,
+renouveler, envoyer, vérifier et révoquer les licences (la ligne de commande `issue.mjs` reste
+disponible). **`scripts/license/private.jwk` et le registre sont secrets et ne sont jamais
+commités** — sauvegardez-les hors ligne. Le bouton « Acheter une licence »
 ouvre `PURCHASE_URL` (`src/lib/license.ts`) dans le navigateur ; tant que cette constante est
 vide, il devient « Demander une licence » et ouvre un e-mail pré-rempli vers `SUPPORT_EMAIL`.
 
