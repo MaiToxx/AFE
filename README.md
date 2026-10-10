@@ -97,7 +97,10 @@ Résultats de `desktop:build` :
 Dans la version bureau, l'export de sauvegarde ouvre une boîte « Enregistrer sous » native ;
 le service worker PWA est désactivé (inutile hors navigateur). Les données sont stockées dans
 le profil WebView2 de l'application (`%LOCALAPPDATA%\fr.afe.desktop`), les sauvegardes
-automatiques dans `%APPDATA%\fr.afe.desktop\sauvegardes`.
+automatiques dans `%APPDATA%\fr.afe.desktop\sauvegardes`. Le début de la période d'essai est en
+outre consigné dans le registre (`HKCU\Software\fr.afe.support`) et dans
+`%PROGRAMDATA%\fr.afe.support`, que la désinstallation conserve : réinstaller ne redonne pas
+d'essai.
 
 ### Mises à jour automatiques
 
@@ -115,9 +118,13 @@ releases dédié) doit être **public** pour que les clients puissent téléchar
 
 ## Licences (vente du logiciel)
 
-L'application se vérifie **hors ligne** avec des clés de licence signées (ECDSA P-256) :
+L'application vérifie elle-même, sans serveur, des clés de licence signées (ECDSA P-256) :
 14 jours d'essai complet, puis la finalisation de nouveaux devis/factures requiert une licence
-(les données restent toujours consultables et exportables). L'outillage vendeur est dans
+(les données restent toujours consultables et exportables). Une révocation s'applique sans mise
+à jour : l'outil vendeur publie une liste signée (`licences/revocations.json`) que l'application
+télécharge à chaque lancement, et une licence qui n'a pas pu être vérifiée depuis 30 jours est
+suspendue jusqu'à la prochaine connexion. Ce téléchargement ne transmet aucune donnée de
+l'utilisateur. L'outillage vendeur est dans
 [`scripts/license/`](scripts/license/README.md) : `keygen.mjs` (une fois), puis l'**interface de
 gestion des licences** — double-clic sur `licences.cmd` ou `npm run licences` — pour émettre,
 renouveler, envoyer, vérifier et révoquer les licences (la ligne de commande `issue.mjs` reste

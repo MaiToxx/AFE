@@ -1,9 +1,10 @@
 // Vérification hors ligne des clés de licence (ECDSA P-256 via WebCrypto).
 // Les clés sont émises par scripts/license/issue.mjs avec la clé privée du vendeur ;
 // seule la clé publique est embarquée ici. Les messages sont des clés de traduction.
+import { b64uToBytes } from './base64url';
 import { addDays, parseISO, todayISO } from './dates';
 import { PUBLIC_KEY_JWK } from './license-public-key';
-import { REVOKED } from './revoked';
+import { EMBEDDED, graceExceeded, type RevocationView } from './revocations';
 
 export const TRIAL_DAYS = 14;
 /** Page de vente (checkout Lemon Squeezy, Gumroad, Stripe…). Vide : le bouton d'achat ouvre un e-mail vers SUPPORT_EMAIL. */
@@ -12,6 +13,7 @@ export const SUPPORT_EMAIL = 'contact.maitox@gmail.com';
 const PREFIX = 'AFE1-';
 
 export interface LicensePayload {
+  /** Format de la clé : 1 (d'origine) ou 2 (émis depuis que l'application consulte les révocations en ligne). */
   v: number;
   id: string;
   name: string;
@@ -31,6 +33,8 @@ export type LicenseStatus =
   | { status: 'licensed'; license: LicensePayload }
   | { status: 'expired'; license: LicensePayload }
   | { status: 'unsupported'; license: LicensePayload }
+  /** Licence valide, mais le service de vérification n'a pas pu être joint depuis trop longtemps. */
+  | { status: 'unverified'; license: LicensePayload }
   | { status: 'invalid'; reasonKey: string };
 
 /** La finalisation de documents est réservée à l'essai en cours et aux licences valides. */
@@ -42,14 +46,6 @@ export function majorOf(version: string): number {
   return Number(version.split('.')[0]) || 0;
 }
 
-function b64uToBytes(s: string): Uint8Array<ArrayBuffer> {
-  const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (s.length % 4)) % 4);
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
 export function parseKey(raw: string): { data: Uint8Array<ArrayBuffer>; sig: Uint8Array<ArrayBuffer>; payload: LicensePayload } | { errorKey: string } {
   const clean = raw.replace(/\s+/g, '');
   if (!clean.startsWith(PREFIX)) return { errorKey: 'licence.err.prefix' };
@@ -59,7 +55,7 @@ export function parseKey(raw: string): { data: Uint8Array<ArrayBuffer>; sig: Uin
     const data = b64uToBytes(p);
     const sig = b64uToBytes(s);
     const payload = JSON.parse(new TextDecoder().decode(data)) as LicensePayload;
-    if (payload.v !== 1 || !payload.name || !payload.email) return { errorKey: 'licence.err.content' };
+    if ((payload.v !== 1 && payload.v !== 2) || !payload.name || !payload.email) return { errorKey: 'licence.err.content' };
     return { data, sig, payload };
   } catch {
     return { errorKey: 'licence.err.unreadable' };
@@ -80,12 +76,29 @@ export async function verifyKey(raw: string): Promise<{ ok: true; payload: Licen
   return ok ? { ok: true, payload: parsed.payload } : { ok: false, reasonKey: 'licence.err.signature' };
 }
 
-/** Statut d'une licence dont la signature est déjà vérifiée. */
-export function evaluate(license: LicensePayload, today = todayISO(), appVersion = __APP_VERSION__): LicenseStatus {
-  // Révocation décidée par le vendeur (remboursement, clé diffusée) : liste embarquée à chaque version.
-  if (REVOKED.includes(license.id)) return { status: 'invalid', reasonKey: 'licence.err.revoked' };
+/**
+ * Statut d'une licence dont la signature est déjà vérifiée. `revocations` : liste des licences
+ * révoquées à appliquer (par défaut celle embarquée) et, si `checkedAt` est fourni, date de la
+ * dernière vérification en ligne, dont dépend le délai de grâce hors connexion.
+ */
+export function evaluate(
+  license: LicensePayload,
+  today = todayISO(),
+  appVersion = __APP_VERSION__,
+  revocations: RevocationView = { ids: EMBEDDED.ids },
+): LicenseStatus {
+  // Révocation décidée par le vendeur (remboursement, clé diffusée).
+  if (revocations.ids.includes(license.id)) return { status: 'invalid', reasonKey: 'licence.err.revoked' };
   if (license.expires && license.expires < today) return { status: 'expired', license };
   if (license.maxMajor !== undefined && majorOf(appVersion) > license.maxMajor) return { status: 'unsupported', license };
+  // Sans vérification en ligne récente, la licence est suspendue. Le délai court depuis la dernière
+  // vérification réussie ou, si elle est plus récente (ou qu'aucune n'a abouti), depuis la date
+  // d'émission de la licence, qui est signée.
+  if (revocations.checkedAt !== undefined) {
+    const checked = (revocations.checkedAt ?? '').slice(0, 10);
+    const issued = typeof license.issued === 'string' ? license.issued : '';
+    if (graceExceeded(checked > issued ? checked : issued, today)) return { status: 'unverified', license };
+  }
   return { status: 'licensed', license };
 }
 

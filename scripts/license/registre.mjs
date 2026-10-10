@@ -1,24 +1,30 @@
-// Registre des licences émises (CSV « ; », UTF-8) et émission des clés. Partagé par la ligne de
-// commande (issue.mjs) et l'interface de gestion (admin.mjs).
+// Registre des licences émises (CSV « ; », UTF-8), émission des clés et liste signée des licences
+// révoquées. Partagé par la ligne de commande (issue.mjs) et l'interface de gestion (admin.mjs).
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { decodeKey, encodeKey, newId } from './lib.mjs';
+import { decodeKey, encodeKey, newId, signText, verifyText } from './lib.mjs';
 
 const ICI = dirname(fileURLToPath(import.meta.url));
+const RACINE = resolve(ICI, '../..');
 /** Dossier des secrets (clé privée, registre) : celui des scripts, ou AFE_LICENCES_DIR (disque chiffré, clé USB…). */
 const SECRETS = process.env.AFE_LICENCES_DIR ? resolve(process.env.AFE_LICENCES_DIR) : ICI;
 
 export const CHEMINS = {
+  racine: RACINE,
   registre: join(SECRETS, 'registre.csv'),
   clePrivee: join(SECRETS, 'private.jwk'),
-  clePublique: resolve(ICI, '../../src/lib/license-public-key.ts'),
-  revocations: resolve(ICI, '../../src/lib/revoked.ts'),
-  paquet: resolve(ICI, '../../package.json'),
+  clePublique: join(RACINE, 'src/lib/license-public-key.ts'),
+  /** Liste signée publiée en ligne (lue par l'application à l'adresse du dépôt). Chemin à ne jamais changer. */
+  revocationsJson: join(RACINE, 'licences/revocations.json'),
+  /** Même liste, embarquée dans l'application comme point de départ. */
+  revocationsTs: join(RACINE, 'src/lib/revocation-list.ts'),
+  paquet: join(RACINE, 'package.json'),
+  tauriConf: join(RACINE, 'src-tauri/tauri.conf.json'),
 };
 
 /** Colonnes du registre. Les neuf premières sont celles d'origine ; les suivantes sont facultatives. */
-export const COLONNES = ['id', 'date', 'nom', 'email', 'plan', 'expire', 'maxMajor', 'note', 'cle', 'periode', 'remplace', 'revoquee', 'langue'];
+export const COLONNES = ['id', 'date', 'nom', 'email', 'plan', 'expire', 'maxMajor', 'note', 'cle', 'periode', 'remplace', 'revoquee', 'langue', 'format'];
 export const LANGUES = ['fr', 'en', 'es', 'de', 'it', 'pt', 'nl'];
 export const PERIODES = ['', 'mensuel', 'annuel'];
 
@@ -93,8 +99,8 @@ export function parseCSV(texte, sep = ';') {
 const csv = (v) => '"' + String(v ?? '').replace(/"/g, '""') + '"';
 
 /**
- * Lit le registre. Tolère l'ancien format à neuf colonnes et conserve les colonnes inconnues
- * (ajoutées à la main dans un tableur) dans `extras`.
+ * Lit le registre. Tolère les anciens formats (colonnes manquantes) et conserve les colonnes
+ * inconnues (ajoutées à la main dans un tableur) dans `extras`.
  */
 export function lireRegistre(chemin = CHEMINS.registre) {
   if (!existsSync(chemin)) return { lignes: [], extras: [] };
@@ -160,10 +166,13 @@ export function memesCles(a, b) {
   return !!a && !!b && a.crv === b.crv && a.x === b.x && a.y === b.y;
 }
 
+/** Format de la clé d'une ligne : 2 = refusée par les versions de l'application sans révocation en ligne. */
+export const formatDe = (l) => (Number(l.format) === 2 ? 2 : 1);
+
 /** Charge utile signée d'une ligne du registre. La note reste privée : elle n'est pas dans la clé. */
 export function chargeUtile(l) {
   return {
-    v: 1,
+    v: formatDe(l),
     id: l.id,
     name: l.nom,
     email: l.email,
@@ -229,32 +238,87 @@ export function validerSaisie(s, lignes, today = aujourdhui(), { passeAutorise =
   return { ok: true, valeur: { nom, email, plan, expire, periode, maxMajor, note, langue, remplace } };
 }
 
-/** Construit et signe une nouvelle ligne à partir d'une saisie validée. */
-export function nouvelleLigne(valeur, lignes, privateJwk, today = aujourdhui()) {
+/** Construit et signe une nouvelle ligne à partir d'une saisie validée. `format` : 1 ou 2 (voir formatDe). */
+export function nouvelleLigne(valeur, lignes, privateJwk, today = aujourdhui(), format = 1) {
   let id = newId();
   while (lignes.some((l) => l.id === id)) id = newId();
-  const ligne = { ...Object.fromEntries(COLONNES.map((c) => [c, ''])), id, date: today, ...valeur, cle: '', revoquee: '' };
+  const ligne = { ...Object.fromEntries(COLONNES.map((c) => [c, ''])), id, date: today, ...valeur, cle: '', revoquee: '', format: String(format === 2 ? 2 : 1) };
   ligne.cle = signer(ligne, privateJwk);
   return ligne;
 }
 
 // ---------------------------------------------------------------------------- révocations
+// La liste des licences révoquées est un petit fichier signé avec la clé privée. Publiée dans le
+// dépôt, elle est téléchargée par l'application, qui en vérifie la signature : personne d'autre
+// que le vendeur ne peut révoquer (ni « dé-révoquer ») une licence. La même liste est embarquée
+// dans l'application comme point de départ.
 
-const ENTETE_REVOCATIONS =
-  "// Licences révoquées (identifiants). Fichier généré par l'interface de gestion des licences\n" +
-  '// (scripts/license/admin.mjs) : ne pas le modifier à la main. Une révocation prend effet chez\n' +
-  "// le client à partir de la version de l'application publiée après elle.\n";
+const DATE_LISTE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const ID_LICENCE = /^[0-9A-F]{8}$/;
 
-export function texteRevocations(ids) {
-  const uniques = [...new Set(ids)].sort();
-  const corps = uniques.length ? `[\n${uniques.map((id) => `  ${JSON.stringify(id)},`).join('\n')}\n]` : '[]';
-  return `${ENTETE_REVOCATIONS}export const REVOKED: readonly string[] = ${corps};\n`;
+/** Texte signé : distinct par construction de la charge utile d'une licence (qui est du JSON). */
+export const messageRevocations = (issued, ids) => `AFE-REVOCATIONS-1|${issued}|${ids.join(',')}`;
+
+export function listeBienFormee(liste) {
+  return (
+    !!liste && liste.v === 1 && typeof liste.issued === 'string' && DATE_LISTE.test(liste.issued) &&
+    Array.isArray(liste.ids) && liste.ids.every((x) => typeof x === 'string' && ID_LICENCE.test(x)) && typeof liste.sig === 'string'
+  );
 }
 
-/** Réécrit la liste embarquée dans l'application si elle a changé. Renvoie true en cas de modification. */
-export function ecrireRevocations(lignes, chemin = CHEMINS.revocations) {
-  const texte = texteRevocations(lignes.filter((l) => l.revoquee).map((l) => l.id));
-  if (existsSync(chemin) && readFileSync(chemin, 'utf8') === texte) return false;
-  writeFileSync(chemin, texte, 'utf8');
-  return true;
+export function listeValide(liste, publicJwk) {
+  return listeBienFormee(liste) && verifyText(messageRevocations(liste.issued, liste.ids), liste.sig, publicJwk);
+}
+
+export function signerListe(ids, issued, privateJwk) {
+  const tries = [...new Set(ids)].sort();
+  return { v: 1, issued, ids: tries, sig: signText(messageRevocations(issued, tries), privateJwk) };
+}
+
+export function lireListe(chemin = CHEMINS.revocationsJson) {
+  try {
+    return JSON.parse(readFileSync(chemin, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+export function texteListeTs(liste) {
+  return (
+    "// Liste signée des licences révoquées, embarquée comme point de départ. Fichier généré par l'outil de\n" +
+    '// gestion des licences (scripts/license) : ne pas le modifier à la main. La liste à jour est publiée\n' +
+    "// dans licences/revocations.json et téléchargée par l'application.\n" +
+    `export const EMBEDDED_REVOCATIONS: { v: number; issued: string; ids: string[]; sig: string } = ${JSON.stringify(liste, null, 2)};\n`
+  );
+}
+
+const memesIds = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Met la liste signée (JSON publié + copie embarquée) en accord avec le registre. La liste n'est
+ * re-signée que si l'ensemble des licences révoquées a changé ; sa date est toujours postérieure à
+ * celle de la liste précédente, car l'application ne retient que la plus récente.
+ * Renvoie { liste, modifie }.
+ */
+export function synchroniserRevocations(lignes, privateJwk, { json = CHEMINS.revocationsJson, ts = CHEMINS.revocationsTs, maintenant = new Date() } = {}) {
+  const ids = [...new Set(lignes.filter((l) => l.revoquee && ID_LICENCE.test(l.id)).map((l) => l.id))].sort();
+  const actuelle = lireListe(json);
+  let liste = actuelle;
+  let modifie = false;
+  if (!listeValide(actuelle, publiqueDepuisPrivee(privateJwk)) || !memesIds(actuelle.ids, ids)) {
+    let issued = maintenant.toISOString();
+    const precedente = actuelle && typeof actuelle.issued === 'string' ? Date.parse(actuelle.issued) : NaN;
+    if (Number.isFinite(precedente) && Date.parse(issued) <= precedente) issued = new Date(precedente + 1000).toISOString();
+    liste = signerListe(ids, issued, privateJwk);
+    mkdirSync(dirname(json), { recursive: true });
+    writeFileSync(json, JSON.stringify(liste, null, 2) + '\n', 'utf8');
+    modifie = true;
+  }
+  const texte = texteListeTs(liste);
+  if (!existsSync(ts) || readFileSync(ts, 'utf8') !== texte) {
+    mkdirSync(dirname(ts), { recursive: true });
+    writeFileSync(ts, texte, 'utf8');
+    modifie = true;
+  }
+  return { liste, modifie };
 }

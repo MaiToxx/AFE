@@ -1,6 +1,8 @@
 import Dexie, { type Table } from 'dexie';
 import { DEFAULT_BAREMES, baremeEqualsDefault } from '../lib/bareme';
 import { todayISO } from '../lib/dates';
+import { LOCAL_SETTINGS } from '../lib/revocations';
+import { decodeTrialMark, readTrialMarks, syncTrialMarks, trialStartFrom } from '../lib/trial';
 import { convertBaremeFR } from '../regimes/migrate';
 import type { Client, Depense, Doc, LegacyBareme, Paiement, Prestation, Profile, Recurrence, RegimeParamsRow, Relance, Setting } from './types';
 
@@ -122,11 +124,21 @@ export async function deleteSetting(key: string): Promise<void> {
   await db.settings.delete(key);
 }
 
-/** Démarre la période d'essai au premier lancement (ne la réinitialise jamais). */
+/**
+ * Fixe le début de la période d'essai au premier lancement et ne le repousse jamais. Entre la date
+ * enregistrée ici et celles consignées hors de l'application (version bureau), la plus ancienne
+ * l'emporte : réinstaller ou effacer les données ne redonne pas une période d'essai complète.
+ */
 export async function ensureTrialStart(): Promise<void> {
+  const today = todayISO();
+  const marks = await readTrialMarks();
+  let start = today;
   await db.transaction('rw', db.settings, async () => {
-    if (!(await db.settings.get('trialStart'))) await db.settings.put({ key: 'trialStart', value: todayISO() });
+    const stored = (await db.settings.get('trialStart'))?.value;
+    start = trialStartFrom([stored, ...marks.map(decodeTrialMark)], today);
+    if (start !== stored) await db.settings.put({ key: 'trialStart', value: start });
   });
+  await syncTrialMarks(start, marks);
 }
 
 export async function saveProfile(patch: Partial<Profile>): Promise<void> {
@@ -218,8 +230,16 @@ export async function importBackup(text: string): Promise<void> {
     await db.recurrences.bulkAdd(data.recurrences ?? []);
     await db.depenses.bulkAdd(data.depenses ?? []);
     // Les réglages locaux sont conservés ; ceux de la sauvegarde (licence) viennent par-dessus.
-    if (data.settings?.length) await db.settings.bulkPut(data.settings.filter((s) => s.key !== 'langue'));
+    // La vérification en ligne de la licence reste celle de cette installation, pas celle de la sauvegarde.
+    // Le début de la période d'essai fait exception : une sauvegarde ne peut pas le repousser.
+    const trial = (await db.settings.get('trialStart'))?.value;
+    if (data.settings?.length) await db.settings.bulkPut(data.settings.filter((s) => s.key !== 'langue' && !LOCAL_SETTINGS.includes(s.key)));
+    const imported = (await db.settings.get('trialStart'))?.value;
+    const start = trialStartFrom([trial, imported], todayISO());
+    if (start !== imported) await db.settings.put({ key: 'trialStart', value: start });
   });
+  // Un début plus ancien venu de la sauvegarde est reporté hors de l'application (version bureau).
+  await ensureTrialStart();
 }
 
 export async function clearAll(): Promise<void> {

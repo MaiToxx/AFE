@@ -25,6 +25,7 @@ const MODELES = {
     jusquau: 'Elle est valable jusqu’au {date}.',
     sansLimite: 'Elle est valable sans limite de durée.',
     conserver: 'Conservez ce message : la clé vous servira si vous changez d’ordinateur.',
+    refusee: 'Si la clé est refusée, installez d’abord la dernière version d’AFE : {lien}',
     salutation: 'Cordialement,',
   },
   en: {
@@ -38,6 +39,7 @@ const MODELES = {
     jusquau: 'It is valid until {date}.',
     sansLimite: 'It is valid with no time limit.',
     conserver: 'Keep this message: you will need the key if you change computers.',
+    refusee: 'If the key is rejected, install the latest version of AFE first: {lien}',
     salutation: 'Kind regards,',
   },
   es: {
@@ -51,6 +53,7 @@ const MODELES = {
     jusquau: 'Es válida hasta el {date}.',
     sansLimite: 'Es válida sin límite de tiempo.',
     conserver: 'Conserve este mensaje: necesitará la clave si cambia de ordenador.',
+    refusee: 'Si la clave es rechazada, instale primero la última versión de AFE: {lien}',
     salutation: 'Un saludo,',
   },
   de: {
@@ -64,6 +67,7 @@ const MODELES = {
     jusquau: 'Er ist bis zum {date} gültig.',
     sansLimite: 'Er ist zeitlich unbegrenzt gültig.',
     conserver: 'Bewahren Sie diese Nachricht auf: Sie benötigen den Schlüssel bei einem Rechnerwechsel.',
+    refusee: 'Falls der Schlüssel abgelehnt wird, installieren Sie zuerst die neueste AFE-Version: {lien}',
     salutation: 'Mit freundlichen Grüßen',
   },
   it: {
@@ -77,6 +81,7 @@ const MODELES = {
     jusquau: 'È valida fino al {date}.',
     sansLimite: 'È valida senza limiti di tempo.',
     conserver: 'Conserva questo messaggio: la chiave ti servirà se cambi computer.',
+    refusee: 'Se la chiave viene rifiutata, installa prima l’ultima versione di AFE: {lien}',
     salutation: 'Cordiali saluti,',
   },
   pt: {
@@ -90,6 +95,7 @@ const MODELES = {
     jusquau: 'É válida até {date}.',
     sansLimite: 'É válida sem limite de tempo.',
     conserver: 'Guarde esta mensagem: precisará da chave se mudar de computador.',
+    refusee: 'Se a chave for recusada, instale primeiro a versão mais recente do AFE: {lien}',
     salutation: 'Com os melhores cumprimentos,',
   },
   nl: {
@@ -103,15 +109,17 @@ const MODELES = {
     jusquau: 'Hij is geldig tot {date}.',
     sansLimite: 'Hij is onbeperkt geldig.',
     conserver: 'Bewaar dit bericht: u hebt de sleutel nodig als u van computer verandert.',
+    refusee: 'Wordt de sleutel geweigerd, installeer dan eerst de nieuwste versie van AFE: {lien}',
     salutation: 'Met vriendelijke groeten,',
   },
 };
 
 /**
  * Compose l'objet et le corps du message.
- * @param {{ langue: string, renouvellement: boolean, nom: string, cle: string, expire: string, signature: string }} p
+ * `lien` : page de téléchargement, indiquée pour les clés qui exigent une version récente.
+ * @param {{ langue: string, renouvellement: boolean, nom: string, cle: string, expire: string, signature: string, lien?: string }} p
  */
-export function composer({ langue, renouvellement, nom, cle, expire, signature }) {
+export function composer({ langue, renouvellement, nom, cle, expire, signature, lien = '' }) {
   const code = MODELES[langue] ? langue : 'fr';
   const m = MODELES[code];
   const date = expire ? new Date(expire + 'T12:00:00').toLocaleDateString(LOCALES[code], { day: 'numeric', month: 'long', year: 'numeric' }) : '';
@@ -124,6 +132,7 @@ export function composer({ langue, renouvellement, nom, cle, expire, signature }
     '',
     renouvellement ? m.activerRenouvellement : m.activer,
     expire ? m.jusquau.replace('{date}', date) : m.sansLimite,
+    ...(lien ? [m.refusee.replace('{lien}', lien)] : []),
     '',
     m.conserver,
     '',

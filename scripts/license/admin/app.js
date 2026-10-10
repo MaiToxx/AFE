@@ -5,6 +5,9 @@ import { LANGUES, composer, lienCourriel, lienGmail } from './messages.js';
 const SEUIL_BIENTOT = 14; // jours avant l'échéance à partir desquels un abonnement est « à renouveler »
 const SEUIL_RELANCE = 30; // jours après l'échéance pendant lesquels il reste proposé au renouvellement
 
+/** Version du dialogue avec le serveur attendue par cette interface. */
+const VERSION_OUTIL = 2;
+
 const etat = {
   licences: [],
   aujourdhui: '',
@@ -19,7 +22,11 @@ const etat = {
   recherche: '',
   historique: false,
   tri: { cle: 'date', sens: -1 },
-  revocationsModifiees: false,
+  publication: { possible: false, enAttente: false, raison: '' },
+  cles: { format: 1, versionPubliee: null, versionRequise: '' },
+  telechargement: '',
+  publicationEnCours: false,
+  erreurPublication: '',
   erreurChargement: '',
 };
 
@@ -202,8 +209,33 @@ function rendreBandeau() {
   else if (!etat.demo && etat.clePresente && !etat.conforme) {
     avis.push(h('div', { class: 'avis critique', role: 'alert' }, 'La clé privée ne correspond pas à la clé publique embarquée dans l’application (src/lib/license-public-key.ts). L’émission de licences est bloquée : elles seraient refusées par l’application.'));
   }
-  if (etat.revocationsModifiees) {
-    avis.push(h('div', { class: 'avis alerte' }, 'La liste des révocations a changé (src/lib/revoked.ts). Elle prendra effet chez vos clients une fois la prochaine version de l’application publiée et installée.'));
+  if (etat.publication.enAttente) {
+    const texte =
+      etat.erreurPublication ||
+      (etat.publication.possible
+        ? 'Des révocations ne sont pas encore publiées en ligne : vos clients ne les reçoivent pas tant qu’elles ne le sont pas.'
+        : `Des révocations ne sont pas publiées en ligne. ${etat.publication.raison}`);
+    avis.push(
+      h(
+        'div',
+        { class: 'avis alerte avec-action', role: 'alert' },
+        h('span', {}, texte),
+        etat.publication.possible
+          ? h('button', { type: 'button', class: 'btn petit', disabled: etat.publicationEnCours, onclick: publierMaintenant }, etat.publicationEnCours ? 'Publication…' : 'Publier maintenant')
+          : null,
+      ),
+    );
+  }
+  if (!etat.demo && etat.clePresente && etat.conforme && etat.cles.format !== 2) {
+    avis.push(
+      h(
+        'div',
+        { class: 'avis' },
+        etat.cles.versionPubliee
+          ? `Version distribuée à vos clients : ${etat.cles.versionPubliee}. Tant que la version ${etat.cles.versionRequise} n’est pas publiée, les clés sont émises à l’ancien format : elles s’activent sur toutes les versions, y compris celles qui ne consultent pas les révocations en ligne.`
+          : 'La version distribuée à vos clients n’a pas pu être lue (pas de connexion ?). Par prudence, les clés sont émises à l’ancien format, activable sur toutes les versions.',
+      ),
+    );
   }
   $('bandeau').replaceChildren(...avis);
 
@@ -348,9 +380,28 @@ async function charger() {
     version: d.version,
     support: d.support,
     registre: d.registre,
-    erreurChargement: '',
+    publication: d.publication ?? { possible: false, enAttente: false, raison: '' },
+    cles: d.cles ?? { format: 1, versionPubliee: null, versionRequise: '' },
+    telechargement: d.telechargement ?? '',
+    // Une interface rechargée face à un serveur resté ouvert depuis une version précédente de l'outil.
+    erreurChargement: (d.outil ?? 1) < VERSION_OUTIL ? 'L’outil a été mis à jour. Fermez-le (bouton « Quitter » ou fenêtre de console), puis relancez licences.cmd.' : '',
   });
+  if (!etat.publication.enAttente) etat.erreurPublication = '';
   rendre();
+}
+
+async function publierMaintenant() {
+  etat.publicationEnCours = true;
+  rendre();
+  try {
+    const { publication } = await api('/api/publier', {});
+    etat.erreurPublication = publication.etat === 'echec' ? publication.message : '';
+    if (publication.etat === 'publiee') message('Révocations publiées en ligne.');
+  } catch (e) {
+    etat.erreurPublication = e.message;
+  }
+  etat.publicationEnCours = false;
+  await charger().catch(() => rendre());
 }
 
 // ------------------------------------------------------------------------------- fenêtres
@@ -539,7 +590,7 @@ async function dialogueMessage(id, titre = 'Envoyer la clé au client') {
   const zoneCle = h('textarea', { class: 'cle', rows: '4', readonly: true, 'aria-label': 'Clé de licence', value: cle });
 
   const composerTout = () => {
-    const m = composer({ langue: langue.value, renouvellement, nom: l.nom, cle, expire: l.expire, signature: signature.value.trim() });
+    const m = composer({ langue: langue.value, renouvellement, nom: l.nom, cle, expire: l.expire, signature: signature.value.trim(), lien: Number(l.format) === 2 ? etat.telechargement : '' });
     objet.value = m.objet;
     corps.value = m.corps;
   };
@@ -676,15 +727,19 @@ function dialogueDetails(id) {
   const basculerRevocation = async () => {
     const revoquer = !l.revoquee;
     const question = revoquer
-      ? `Révoquer la licence nº ${l.id} de ${l.nom} ?\n\nElle sera refusée par l’application à partir de la prochaine version publiée (la liste des révocations est embarquée dans l’application). Les versions déjà installées continuent de l’accepter tant qu’elles ne sont pas mises à jour.`
-      : `Rétablir la licence nº ${l.id} de ${l.nom} ?\n\nSi une version contenant la révocation a déjà été publiée, la clé ne sera de nouveau acceptée qu’avec la version suivante.`;
+      ? `Révoquer la licence nº ${l.id} de ${l.nom} ?\n\nLa révocation est publiée en ligne aussitôt. L’application du client la reçoit d’elle-même à son prochain lancement connecté, sans mise à jour.`
+      : `Rétablir la licence nº ${l.id} de ${l.nom} ?\n\nLe rétablissement est publié en ligne aussitôt et s’applique au prochain lancement connecté de l’application du client.`;
     if (!confirm(question)) return;
     try {
       const r = await api('/api/revoquer', { id, revoquer });
-      if (r.listeModifiee) etat.revocationsModifiees = true;
+      const echec = r.publication?.etat === 'echec';
+      const erreur = echec ? r.publication.message : '';
       await charger();
+      etat.erreurPublication = erreur;
+      rendre();
       dialogueDetails(id);
-      message(revoquer ? 'Licence révoquée.' : 'Licence rétablie.');
+      const suite = r.publication?.etat === 'publiee' ? ' et publiée en ligne' : echec ? ', mais la publication en ligne a échoué' : '';
+      message(`${revoquer ? 'Licence révoquée' : 'Licence rétablie'}${suite}.`, echec ? 'critique' : '');
     } catch (e) {
       message(e.message, 'critique');
     }
@@ -704,7 +759,11 @@ function dialogueDetails(id) {
         ligneFiche('Émise le', fmtDate(l.date)),
         ligneFiche('Expire le', l.expire ? `${fmtDate(l.expire)} (${delai(l.expire)})` : 'Jamais (licence à vie)'),
         ligneFiche('Mises à jour', l.maxMajor !== '' ? `Jusqu’aux versions ${l.maxMajor}.x` : 'Toutes les versions'),
+        ligneFiche('Format de clé', Number(l.format) === 2 ? 'Protégé : exige une version qui consulte les révocations en ligne' : 'Ancien : activable sur toutes les versions'),
       ),
+      l.revoquee && Number(l.format) !== 2
+        ? h('div', { class: 'avis alerte' }, `Cette clé est à l’ancien format : elle reste utilisable sur les versions de l’application antérieures à la ${etat.cles.versionRequise || '0.4.2'}, qui ne consultent pas les révocations en ligne.`)
+        : null,
       suite.length > 1
         ? champ(
             'Historique de l’abonnement',

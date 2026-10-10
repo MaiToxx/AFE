@@ -1,12 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isLang } from '../i18n';
 import { todayISO } from '../lib/dates';
 import { normalizeDoc } from '../lib/documents';
 import { evaluate, trialStatus, verifyKey, type LicenseStatus } from '../lib/license';
+import { SETTING_REVOCATIONS, SETTING_REVOCATIONS_CHECKED } from '../lib/revocations';
+import { isCheckSettled, refreshRevocations, revocationView, subscribeCheckSettled } from '../lib/revocationsStore';
 import { getRegime } from '../regimes';
 import type { Regime, RegimeParams } from '../regimes/types';
-import { DEFAULT_PROFILE, db } from './db';
+import { DEFAULT_PROFILE, db, getSetting } from './db';
 import type { Client, Depense, Doc, Paiement, Prestation, Profile, Recurrence, Relance, Setting } from './types';
 
 /** Complète un profil enregistré avec les valeurs par défaut et les champs migrés. */
@@ -82,8 +84,12 @@ export function useRecurrences(): Recurrence[] {
 export function useLicense(): LicenseStatus {
   const settings = useLiveQuery(() => db.settings.toArray(), [], null as Setting[] | null);
   const [state, setState] = useState<LicenseStatus>({ status: 'loading' });
-  const licenseKey = settings?.find((s) => s.key === 'licenseKey')?.value ?? '';
-  const trialStart = settings?.find((s) => s.key === 'trialStart')?.value ?? '';
+  const checkSettled = useSyncExternalStore(subscribeCheckSettled, isCheckSettled);
+  const valeur = (key: string) => settings?.find((s) => s.key === key)?.value ?? '';
+  const licenseKey = valeur('licenseKey');
+  const trialStart = valeur('trialStart');
+  const revocations = valeur(SETTING_REVOCATIONS);
+  const checkedAt = valeur(SETTING_REVOCATIONS_CHECKED);
   const pending = settings === null;
   useEffect(() => {
     if (pending) return;
@@ -93,12 +99,28 @@ export function useLicense(): LicenseStatus {
       setState(trialStart ? trialStatus(trialStart, today) : { status: 'loading' });
       return;
     }
-    verifyKey(licenseKey).then((r) => {
-      if (!cancelled) setState(r.ok ? evaluate(r.payload, today) : { status: 'invalid', reasonKey: r.reasonKey });
-    });
+    (async () => {
+      const r = await verifyKey(licenseKey);
+      if (cancelled) return;
+      if (!r.ok) {
+        setState({ status: 'invalid', reasonKey: r.reasonKey });
+        return;
+      }
+      // Liste et date de vérification sont relues à l'instant : quand une vérification vient de
+      // s'achever, la requête réactive (qui relance cet effet) peut encore porter les valeurs précédentes.
+      const [liste, verifiee] = await Promise.all([getSetting(SETTING_REVOCATIONS), getSetting(SETTING_REVOCATIONS_CHECKED)]);
+      const status = evaluate(r.payload, today, undefined, await revocationView(liste ?? '', verifiee ?? ''));
+      if (cancelled) return;
+      if (status.status === 'unverified' && !checkSettled) {
+        // La vérification en ligne du lancement n'a pas encore abouti : on attend son résultat
+        // (et on la déclenche au besoin) avant de suspendre quoi que ce soit.
+        void refreshRevocations();
+        setState({ status: 'loading' });
+      } else setState(status);
+    })();
     return () => {
       cancelled = true;
     };
-  }, [pending, licenseKey, trialStart]);
+  }, [pending, licenseKey, trialStart, revocations, checkedAt, checkSettled]);
   return state;
 }

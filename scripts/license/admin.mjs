@@ -1,7 +1,8 @@
 // Interface de gestion des licences AFE (outil vendeur, local).
-//   node scripts/license/admin.mjs [--port 4780] [--no-open] [--demo]
+//   node scripts/license/admin.mjs [--port 4780] [--no-open] [--demo] [--sans-publication]
 // Démarre un petit serveur lié à 127.0.0.1 et ouvre l'interface dans le navigateur. La clé privée
 // et le registre ne quittent jamais cette machine. `--demo` : données fictives, rien n'est écrit.
+// `--sans-publication` : les révocations ne sont pas poussées en ligne automatiquement.
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
@@ -9,11 +10,14 @@ import http from 'node:http';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { decodeKey, readPublicJwk } from './lib.mjs';
+import { VERSION_CLES_V2, etatPublication, formatCles, formatClesConnu, pageTelechargement, publier } from './publication.mjs';
 import {
-  CHEMINS, LANGUES, PERIODES, ajouterMois, aujourdhui, ecrireRegistre, ecrireRevocations, isoValide, lireRegistre, memesCles,
-  nouvelleLigne, publiqueDepuisPrivee, signer, validerSaisie,
+  CHEMINS, LANGUES, PERIODES, ajouterMois, aujourdhui, ecrireRegistre, isoValide, lireRegistre, memesCles,
+  nouvelleLigne, publiqueDepuisPrivee, signer, synchroniserRevocations, validerSaisie,
 } from './registre.mjs';
 
+/** Version du dialogue entre cette interface et son serveur (l'interface refuse un serveur plus ancien). */
+const VERSION_OUTIL = 2;
 const ICI = dirname(fileURLToPath(import.meta.url));
 const STATIQUE = join(ICI, 'admin');
 const args = process.argv.slice(2);
@@ -24,6 +28,7 @@ const option = (n) => {
 };
 const DEMO = drapeau('demo');
 const SANS_NAVIGATEUR = drapeau('no-open');
+const PUBLICATION_AUTO = !drapeau('sans-publication');
 const PORT_VOULU = Number(option('port')) || 4780;
 
 // ------------------------------------------------------------------------------- données
@@ -42,7 +47,7 @@ function versionApp() {
 
 function emailSupport() {
   try {
-    return readFileSync(join(ICI, '../../src/lib/license.ts'), 'utf8').match(/SUPPORT_EMAIL\s*=\s*'([^']+)'/)?.[1] ?? '';
+    return readFileSync(join(CHEMINS.racine, 'src/lib/license.ts'), 'utf8').match(/SUPPORT_EMAIL\s*=\s*'([^']+)'/)?.[1] ?? '';
   } catch {
     return '';
   }
@@ -66,15 +71,20 @@ function depotFichier() {
   } catch {
     /* signalé par conforme = false */
   }
+  const conforme = !!privee && memesCles(publiqueDepuisPrivee(privee), publiqueApp);
   return {
     privee,
     erreurCle,
-    publiqueApp,
-    conforme: !!privee && memesCles(publiqueDepuisPrivee(privee), publiqueApp),
+    conforme,
     emplacement: CHEMINS.registre,
     lire: () => lireRegistre(CHEMINS.registre),
     ecrire: (lignes, extras) => ecrireRegistre(lignes, extras, CHEMINS.registre),
-    revocations: (lignes) => ecrireRevocations(lignes),
+    /** Liste signée des révocations : seulement avec la clé que l'application sait vérifier. */
+    revocations: (lignes) => (conforme ? synchroniserRevocations(lignes, privee).modifie : false),
+    publication: () => (conforme ? etatPublication() : { possible: false, enAttente: false, raison: '' }),
+    publier: () => publier(),
+    format: () => formatCles(),
+    formatConnu: () => formatClesConnu(),
   };
 }
 
@@ -89,25 +99,24 @@ function depotDemo() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
   let lignes = [];
-  const ajouter = (saisie, date, extra = {}) => {
+  const ajouter = (saisie, date, extra = {}, format = 2) => {
     const v = validerSaisie(saisie, lignes, today, { passeAutorise: true });
     if (!v.ok) throw new Error('Jeu de démonstration invalide : ' + JSON.stringify(v.erreurs));
-    const l = { ...nouvelleLigne(v.valeur, lignes, privee, date), ...extra };
+    const l = { ...nouvelleLigne(v.valeur, lignes, privee, date, format), ...extra };
     lignes = [...lignes, l];
     return l;
   };
-  ajouter({ nom: 'Camille Martin', email: 'camille@exemple.fr', plan: 'perpetuelle', note: 'Commande nº 1042, virement' }, jour(-210));
-  ajouter({ nom: 'Atelier Dupain SARL', email: 'contact@dupain.exemple', plan: 'abonnement', periode: 'annuel', expire: jour(190) }, jour(-175));
+  ajouter({ nom: 'Camille Martin', email: 'camille@exemple.fr', plan: 'perpetuelle', note: 'Commande nº 1042, virement' }, jour(-210), {}, 1);
+  ajouter({ nom: 'Atelier Dupain SARL', email: 'contact@dupain.exemple', plan: 'abonnement', periode: 'annuel', expire: jour(190) }, jour(-175), {}, 1);
   const ancien = ajouter({ nom: 'Jonas Weber', email: 'jonas.weber@beispiel.de', plan: 'abonnement', periode: 'mensuel', expire: jour(-2), langue: 'de' }, jour(-33));
   ajouter({ nom: 'Jonas Weber', email: 'jonas.weber@beispiel.de', plan: 'abonnement', periode: 'mensuel', expire: jour(28), langue: 'de', remplace: ancien.id }, jour(-3));
   ajouter({ nom: 'Lucía Fernández', email: 'lucia@ejemplo.es', plan: 'abonnement', periode: 'mensuel', expire: jour(5), langue: 'es', note: 'Paie par carte le 15' }, jour(-26));
-  ajouter({ nom: 'Studio Lumière', email: 'hello@studiolumiere.exemple', plan: 'abonnement', periode: 'annuel', expire: jour(-40) }, jour(-405));
+  ajouter({ nom: 'Studio Lumière', email: 'hello@studiolumiere.exemple', plan: 'abonnement', periode: 'annuel', expire: jour(-40) }, jour(-405), {}, 1);
   ajouter({ nom: 'Marco Bianchi', email: 'marco@esempio.it', plan: 'perpetuelle', maxMajor: '1', langue: 'it' }, jour(-90));
   ajouter({ nom: 'Compte remboursé', email: 'rembourse@exemple.fr', plan: 'perpetuelle', note: 'Remboursé le lendemain' }, jour(-60), { revoquee: jour(-59) });
   return {
     privee,
     erreurCle: '',
-    publiqueApp: null,
     conforme: false,
     emplacement: 'mémoire (démonstration)',
     lire: () => ({ lignes, extras: [] }),
@@ -115,6 +124,10 @@ function depotDemo() {
       lignes = nouvelles;
     },
     revocations: () => false,
+    publication: () => ({ possible: false, enAttente: false, raison: '' }),
+    publier: () => ({ etat: 'publiee', message: '' }),
+    format: async () => ({ format: 2, versionPubliee: versionApp(), versionRequise: VERSION_CLES_V2 }),
+    formatConnu: () => ({ format: 2, versionPubliee: versionApp(), versionRequise: VERSION_CLES_V2 }),
   };
 }
 
@@ -205,10 +218,19 @@ function trouver(lignes, id) {
 
 const remplacees = (lignes) => new Set(lignes.map((l) => l.remplace).filter(Boolean));
 
+/** Pousse la liste en ligne si elle a changé (ou si un envoi précédent a échoué). */
+function publierSiBesoin(force = false) {
+  const etat = depot.publication();
+  if (!etat.enAttente) return { etat: 'a_jour', message: '' };
+  if (!force && !PUBLICATION_AUTO) return { etat: 'en_attente', message: '' };
+  return depot.publier();
+}
+
 const API = {
   etat() {
     const { lignes } = depot.lire();
     return {
+      outil: VERSION_OUTIL,
       licences: lignes,
       aujourdhui: aujourdhui(),
       demo: DEMO,
@@ -219,21 +241,24 @@ const API = {
       support: emailSupport(),
       registre: depot.emplacement,
       langues: LANGUES,
+      publication: depot.publication(),
+      cles: depot.formatConnu(),
+      telechargement: pageTelechargement(),
     };
   },
 
-  emettre(corps) {
+  async emettre(corps) {
     exigerEmission();
     const { lignes, extras } = depot.lire();
     const v = validerSaisie(corps, lignes);
     if (!v.ok) throw new Refus(422, 'Vérifiez les champs signalés.', v.erreurs);
     if (v.valeur.remplace) throw new Refus(422, 'Utilisez « Renouveler » pour remplacer une licence existante.');
-    const licence = nouvelleLigne(v.valeur, lignes, depot.privee);
+    const licence = nouvelleLigne(v.valeur, lignes, depot.privee, aujourdhui(), (await depot.format()).format);
     depot.ecrire([...lignes, licence], extras);
     return { licence };
   },
 
-  renouveler(corps) {
+  async renouveler(corps) {
     exigerEmission();
     const { lignes, extras } = depot.lire();
     const ancienne = trouver(lignes, String(corps.id ?? ''));
@@ -252,7 +277,7 @@ const API = {
       today,
     );
     if (!v.ok) throw new Refus(422, 'Vérifiez les champs signalés.', v.erreurs);
-    const licence = nouvelleLigne(v.valeur, lignes, depot.privee, today);
+    const licence = nouvelleLigne(v.valeur, lignes, depot.privee, today, (await depot.format()).format);
     depot.ecrire([...lignes, licence], extras);
     return { licence };
   },
@@ -274,14 +299,21 @@ const API = {
     return { licence: suivante };
   },
 
+  /** Révoque ou rétablit : registre, liste signée, puis publication en ligne. */
   revoquer(corps) {
     const { lignes, extras } = depot.lire();
     const l = trouver(lignes, String(corps.id ?? ''));
     const suivante = { ...l, revoquee: corps.revoquer ? l.revoquee || aujourdhui() : '' };
     const nouvelles = lignes.map((x) => (x.id === l.id ? suivante : x));
     depot.ecrire(nouvelles, extras);
-    const listeModifiee = depot.revocations(nouvelles);
-    return { licence: suivante, listeModifiee };
+    depot.revocations(nouvelles);
+    return { licence: suivante, publication: publierSiBesoin() };
+  },
+
+  /** Nouvel essai de publication (bouton « Publier maintenant »). */
+  publier() {
+    depot.revocations(depot.lire().lignes);
+    return { publication: publierSiBesoin(true) };
   },
 
   cle(corps) {
@@ -327,7 +359,7 @@ async function traiter(req, res) {
     const fichier = join(STATIQUE, FICHIERS[url.pathname]);
     return repondre(res, 200, TYPES[extname(fichier)] ?? 'application/octet-stream', readFileSync(fichier));
   }
-  if (req.method === 'GET' && url.pathname === '/api/etat') return json(res, 200, API.etat());
+  if (req.method === 'GET' && url.pathname === '/api/etat') return json(res, 200, await API.etat());
 
   if (req.method === 'POST' && url.pathname.startsWith('/api/')) {
     const origine = req.headers.origin;
@@ -341,7 +373,7 @@ async function traiter(req, res) {
       return json(res, 200, { ok: true });
     }
     if (action === 'etat' || !Object.hasOwn(API, action)) throw new Refus(404, 'Action inconnue.');
-    return json(res, 200, API[action](corps));
+    return json(res, 200, await API[action](corps));
   }
   return page(res, 404, 'Introuvable', 'Cette page n’existe pas.');
 }
@@ -380,8 +412,13 @@ function pret() {
   const url = `http://127.0.0.1:${port}/?t=${JETON}`;
   let nombre = 0;
   let erreurRegistre = '';
+  let publication = { etat: 'a_jour', message: '' };
   try {
-    nombre = depot.lire().lignes.length;
+    const { lignes } = depot.lire();
+    nombre = lignes.length;
+    // La liste signée suit le registre : une révocation faite ailleurs (ou restée en attente) est rattrapée ici.
+    depot.revocations(lignes);
+    publication = publierSiBesoin();
   } catch (e) {
     erreurRegistre = e.message;
   }
@@ -391,7 +428,12 @@ function pret() {
   if (erreurRegistre) console.log('ATTENTION : ' + erreurRegistre);
   if (depot.erreurCle) console.log('ATTENTION : ' + depot.erreurCle);
   else if (!DEMO && !depot.conforme) console.log('ATTENTION : la clé privée ne correspond pas à la clé publique de l’application.');
+  if (publication.etat === 'publiee') console.log('Révocations : liste publiée en ligne.');
+  else if (publication.etat === 'echec') console.log('ATTENTION : ' + publication.message);
+  else if (publication.etat === 'en_attente') console.log('Révocations : des changements attendent d’être publiés.');
   console.log('\nLaissez cette fenêtre ouverte pendant l’utilisation. Fermez-la, ou cliquez sur « Quitter », pour arrêter.');
+  // La version distribuée aux clients est lue dès maintenant pour ne pas ralentir la première émission.
+  depot.format().catch(() => undefined);
   if (!SANS_NAVIGATEUR) ouvrirNavigateur(url);
 }
 

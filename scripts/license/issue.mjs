@@ -6,6 +6,7 @@
 // elle n'est pas inscrite dans la clé.
 import { existsSync, readFileSync } from 'node:fs';
 import { readPublicJwk } from './lib.mjs';
+import { formatCles } from './publication.mjs';
 import { CHEMINS, ecrireRegistre, lireRegistre, memesCles, nouvelleLigne, publiqueDepuisPrivee, validerSaisie } from './registre.mjs';
 
 const args = process.argv.slice(2);
@@ -39,7 +40,9 @@ const v = validerSaisie(
 );
 if (!v.ok) throw new Error(Object.values(v.erreurs).join(' '));
 
-const ligne = nouvelleLigne(v.valeur, lignes, privateJwk);
+// Format 2 (refusé par les versions sans révocation en ligne) dès que la version qui le lit est publiée.
+const cles = await formatCles();
+const ligne = nouvelleLigne(v.valeur, lignes, privateJwk, undefined, cles.format);
 ecrireRegistre([...lignes, ligne], extras);
 
 console.log(
@@ -48,3 +51,6 @@ console.log(
 );
 console.log(ligne.cle);
 console.log('\nConsignée dans ' + CHEMINS.registre);
+if (cles.format !== 2) {
+  console.log(`Clé à l'ancien format (version distribuée : ${cles.versionPubliee ?? 'inconnue'}) : activable sur toutes les versions. Le format protégé sera utilisé une fois la version ${cles.versionRequise} publiée.`);
+}

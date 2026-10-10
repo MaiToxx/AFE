@@ -6,8 +6,8 @@ import BuyLicenceButton from '../components/BuyLicenceButton';
 import { useTheme, type Theme } from '../components/Layout';
 import PrestationForm from '../components/PrestationForm';
 import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
-import { clearAll, db, deleteSetting, exportBackup, importBackup, saveProfile, setSetting } from '../db/db';
-import { useCatalogue, useDocuments, useLicense, useProfile, useRegime, useRegimeOverrides } from '../db/hooks';
+import { clearAll, db, deleteSetting, exportBackup, getSetting, importBackup, saveProfile, setSetting } from '../db/db';
+import { useCatalogue, useDocuments, useLicense, useProfile, useRegime, useRegimeOverrides, useSetting } from '../db/hooks';
 import type { Frequence, Nature, Prestation, Profile } from '../db/types';
 import { colon, LANGS, useI18n, type Lang } from '../i18n';
 import { dossierSauvegardes, ouvrirDossierSauvegardes, sauvegardeAutomatique } from '../lib/autoBackup';
@@ -17,6 +17,8 @@ import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
 import { fmtDate, fmtMoney } from '../lib/format';
 import { PURCHASE_URL, SUPPORT_EMAIL, TRIAL_DAYS, evaluate, verifyKey, type LicenseStatus } from '../lib/license';
 import { sauvegarderCleFichier, supprimerCleFichier } from '../lib/licenseStore';
+import { REVOCATION_GRACE_DAYS, SETTING_REVOCATIONS, SETTING_REVOCATIONS_CHECKED } from '../lib/revocations';
+import { refreshRevocations, revocationView } from '../lib/revocationsStore';
 import { verifierMiseAJour } from '../lib/updater';
 import { DEVISES, L, PAYS, getRegime, statutsDe } from '../regimes';
 import { composanteActive, paramsFor, tvaFrequence } from '../regimes/engine';
@@ -560,12 +562,14 @@ function LicenceEtat({ lic }: { lic: LicenseStatus }) {
       );
     case 'licensed':
     case 'expired':
-    case 'unsupported': {
+    case 'unsupported':
+    case 'unverified': {
       const l = lic.license;
       return (
         <>
           <p>
             {lic.status === 'licensed' && <Badge tone="good">{t('licence.activeBadge')}</Badge>}
+            {lic.status === 'unverified' && <Badge tone="warning">{t('licence.unverifiedBadge')}</Badge>}
             {lic.status === 'expired' && <Badge tone="critical">{t('licence.expiredBadge', { date: fmtDate(l.expires ?? '') })}</Badge>}
             {lic.status === 'unsupported' && <Badge tone="critical">{t('licence.unsupportedBadge', { version: __APP_VERSION__ })}</Badge>}
           </p>
@@ -577,10 +581,42 @@ function LicenceEtat({ lic }: { lic: LicenseStatus }) {
             <dt>{t('licence.issued')}</dt><dd>{fmtDate(l.issued)}</dd>
           </dl>
           {lic.status === 'unsupported' && <p className="text-2 small" style={{ marginTop: 8 }}>{t('licence.unsupportedText', { major: l.maxMajor ?? 0, email: SUPPORT_EMAIL })}</p>}
+          {lic.status === 'unverified' && <p className="text-2 small" style={{ marginTop: 8 }}>{t('licence.unverifiedText', { days: REVOCATION_GRACE_DAYS })}</p>}
         </>
       );
     }
   }
+}
+
+/** Vérification en ligne de la licence : date de la dernière réussie et déclenchement manuel. */
+function VerificationEnLigne() {
+  const { t, locale } = useI18n();
+  const checkedAt = useSetting(SETTING_REVOCATIONS_CHECKED);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  async function verifier() {
+    setBusy(true);
+    setMsg('');
+    const r = await refreshRevocations({ force: true });
+    setBusy(false);
+    setMsg(r.status === 'offline' ? t('licence.checkOffline') : t('licence.checkOk'));
+  }
+  const date = checkedAt && !Number.isNaN(Date.parse(checkedAt)) ? new Date(checkedAt).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  return (
+    <div className="card">
+      <h3>{t('licence.onlineCheck')}</h3>
+      <p className="small text-2" style={{ margin: '4px 0 8px' }}>
+        {t('licence.onlineCheckText')} {REVOCATION_GRACE_DAYS > 0 ? t('licence.onlineCheckGrace', { days: REVOCATION_GRACE_DAYS }) : ''}
+      </p>
+      <p className="small">{date ? t('licence.lastCheck', { date }) : t('licence.neverChecked')}</p>
+      <div className="actions" style={{ marginTop: 8 }}>
+        <button type="button" className="btn sm" onClick={verifier} disabled={busy}>
+          <Icon name="check" size={15} /> {busy ? t('licence.checking') : t('licence.checkNow')}
+        </button>
+        {msg && <span className="small text-2" role="status">{msg}</span>}
+      </div>
+    </div>
+  );
 }
 
 function LicenceTab() {
@@ -600,7 +636,11 @@ function LicenceTab() {
         setMsg({ tone: 'critical', text: t(r.reasonKey) });
         return;
       }
-      const ev = evaluate(r.payload);
+      // La liste des révocations est consultée avant d'accepter la clé : une clé révoquée est refusée
+      // d'emblée. Hors connexion, on s'en tient à la liste déjà connue de cette installation.
+      await refreshRevocations({ force: true });
+      const connues = await revocationView((await getSetting(SETTING_REVOCATIONS)) ?? '', '');
+      const ev = evaluate(r.payload, undefined, undefined, { ids: connues.ids });
       if (ev.status === 'invalid') {
         setMsg({ tone: 'critical', text: t(ev.reasonKey) });
         return;
@@ -640,17 +680,18 @@ function LicenceTab() {
         </div>
         <LicenceEtat lic={lic} />
       </div>
+      {hasKey && <VerificationEnLigne />}
       <div className="card">
         <h3>{t('licence.activateTitle')}</h3>
         <p className="small text-2" style={{ margin: '4px 0 12px' }}>{t('licence.activateText')}{isTauri ? ` ${t('licence.fileCopy')}` : ''}</p>
         <textarea value={key} onChange={(e) => setKey(e.target.value)} rows={4} placeholder="AFE1-…" spellCheck={false} style={{ fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12.5 }} aria-label={t('licence.keyLabel')} />
         <div className="actions" style={{ marginTop: 10 }}>
           <button type="button" className="btn primary" onClick={activer} disabled={busy || !key.trim()}>
-            <Icon name="check" /> {t('licence.activate')}
+            <Icon name="check" /> {busy ? t('licence.checking') : t('licence.activate')}
           </button>
         </div>
       </div>
-      {lic.status !== 'licensed' && (
+      {lic.status !== 'licensed' && lic.status !== 'unverified' && (
         <div className="card">
           <h3>{t('licence.getTitle')}</h3>
           <p className="small text-2" style={{ margin: '4px 0 12px' }}>{t('licence.getText')}{PURCHASE_URL ? '' : ` ${t('licence.getTextMail')}`}</p>

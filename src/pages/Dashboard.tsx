@@ -123,7 +123,7 @@ export default function Dashboard() {
     return top;
   }, [mode, paiements, docs, docsById, clients, year, t]);
 
-  const blocked = licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid';
+  const blocked = licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid' || licence.status === 'unverified';
 
   return (
     <>
@@ -144,13 +144,19 @@ export default function Dashboard() {
 
       {blocked && (
         <div style={{ marginBottom: 18 }}>
-          <Notice tone="critical">
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Notice tone={licence.status === 'unverified' ? 'warning' : 'critical'}>
+            {licence.status === 'unverified' ? (
               <span>
-                {licence.status === 'trial_over' ? t('licence.trialOverNotice') : t('licence.invalidNotice')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
+                {t('licence.unverifiedNotice')} <Link to="/parametres?tab=licence">{t('licence.checkLink')}</Link>
               </span>
-              <BuyLicenceButton small />
-            </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>
+                  {licence.status === 'trial_over' ? t('licence.trialOverNotice') : t('licence.invalidNotice')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
+                </span>
+                <BuyLicenceButton small />
+              </div>
+            )}
           </Notice>
         </div>
       )}

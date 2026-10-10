@@ -23,7 +23,14 @@ export function decodeKey(rawKey, publicJwk) {
   const sig = fromB64u(s);
   const key = createPublicKey({ key: publicJwk, format: 'jwk' });
   if (!verify('sha256', data, { key, dsaEncoding: 'ieee-p1363' }, sig)) return { ok: false, reason: 'signature invalide' };
-  return { ok: true, payload: JSON.parse(data.toString('utf8')) };
+  // Un texte correctement signé mais qui n'est pas une licence (la liste des révocations, par exemple) est refusé.
+  try {
+    const payload = JSON.parse(data.toString('utf8'));
+    if (!payload || typeof payload !== 'object' || !payload.id || !payload.email) return { ok: false, reason: 'contenu invalide' };
+    return { ok: true, payload };
+  } catch {
+    return { ok: false, reason: 'contenu illisible' };
+  }
 }
 
 export const newId = () => randomBytes(4).toString('hex').toUpperCase();
@@ -33,4 +40,19 @@ export function readPublicJwk(tsSource) {
   const m = tsSource.match(/=\s*(\{[\s\S]*?\})\s*as const/);
   if (!m) throw new Error('Clé publique introuvable dans license-public-key.ts');
   return JSON.parse(m[1]);
+}
+
+/** Signe un texte quelconque (liste des révocations) avec la clé privée. */
+export function signText(text, privateJwk) {
+  const key = createPrivateKey({ key: privateJwk, format: 'jwk' });
+  return b64u(sign('sha256', Buffer.from(text, 'utf8'), { key, dsaEncoding: 'ieee-p1363' }));
+}
+
+export function verifyText(text, signature, publicJwk) {
+  try {
+    const key = createPublicKey({ key: publicJwk, format: 'jwk' });
+    return verify('sha256', Buffer.from(text, 'utf8'), { key, dsaEncoding: 'ieee-p1363' }, fromB64u(signature));
+  } catch {
+    return false;
+  }
 }

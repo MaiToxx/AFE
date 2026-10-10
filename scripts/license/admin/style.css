@@ -79,6 +79,7 @@ main { max-width: 1240px; margin: 0 auto; padding: 20px 24px 40px; display: grid
 .avis { padding: 10px 14px; border-radius: 10px; background: var(--info-fond); border: 1px solid transparent; }
 .avis.alerte { background: var(--alerte-fond); color: var(--alerte); }
 .avis.critique { background: var(--critique-fond); color: var(--critique); }
+.avis.avec-action { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
 
 /* Tuiles */
 .tuiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

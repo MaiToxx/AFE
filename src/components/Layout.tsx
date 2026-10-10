@@ -81,6 +81,13 @@ function LicenceBadge() {
           <span>{t('licence.checkShort')}</span>
         </Link>
       );
+    case 'unverified':
+      return (
+        <Link to={to} className="lic warning" title={t('licence.unverifiedBadge')}>
+          <Icon name="alert" />
+          <span>{t('licence.checkShort')}</span>
+        </Link>
+      );
     case 'licensed':
       return (
         <Link to={to} className="lic good" title={`${t('licence.number')} ${lic.license.id}`}>

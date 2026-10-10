@@ -148,12 +148,18 @@ export default function DocumentEditor() {
   async function onFinaliser() {
     if (!canFinalize(licence)) {
       setError(
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        licence.status === 'unverified' ? (
           <span>
-            {licence.status === 'trial_over' ? t('licence.trialOverFinalize') : t('licence.invalidFinalize')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
+            {t('licence.unverifiedFinalize')} <Link to="/parametres?tab=licence">{t('licence.checkLink')}</Link>
           </span>
-          <BuyLicenceButton small />
-        </div>,
+        ) : (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span>
+              {licence.status === 'trial_over' ? t('licence.trialOverFinalize') : t('licence.invalidFinalize')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
+            </span>
+            <BuyLicenceButton small />
+          </div>
+        ),
       );
       return;
     }
@@ -282,12 +288,18 @@ export default function DocumentEditor() {
       {bloque && !locked && !error && (
         <div style={{ marginBottom: 14 }}>
           <Notice tone="warning">
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            {licence.status === 'unverified' ? (
               <span>
-                {t('licence.draftOnly')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
+                {t('licence.unverifiedFinalize')} <Link to="/parametres?tab=licence">{t('licence.checkLink')}</Link>
               </span>
-              <BuyLicenceButton small primary={false} />
-            </div>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span>
+                  {t('licence.draftOnly')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
+                </span>
+                <BuyLicenceButton small primary={false} />
+              </div>
+            )}
           </Notice>
         </div>
       )}
