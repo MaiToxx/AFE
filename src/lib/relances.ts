@@ -1,31 +1,32 @@
 import { db } from '../db/db';
 import type { Doc, Profile, Relance } from '../db/types';
+import { tIn, type Lang } from '../i18n';
+import type { Regime } from '../regimes/types';
+import { L, localeFor } from '../regimes';
 import { daysBetween, todayISO } from './dates';
-import { fmtDate, fmtEUR } from './format';
+import { fmtDate, fmtMoneyIn } from './format';
 
-/** E-mail de relance pré-rempli (mailto:) pour une facture en attente de paiement. */
-export function relanceMailto(doc: Doc, profile: Profile, reste: number, nbRelances: number, today = todayISO()): string {
+/** E-mail de relance pré-rempli (mailto:) dans la langue du document. */
+export function relanceMailto(doc: Doc, profile: Profile, regime: Regime, reste: number, nbRelances: number, today = todayISO()): string {
+  const lang: Lang = doc.langue || profile.langueDocuments;
+  const locale = localeFor(lang, profile.pays);
+  const devise = doc.devise || profile.devise;
+  const money = (n: number) => fmtMoneyIn(locale, devise, n);
   const retard = daysBetween(doc.dateEcheance, today);
   const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim();
-  const subject = `${nbRelances >= 1 ? `Relance n° ${nbRelances + 1}` : 'Rappel'} — facture ${doc.numero} du ${fmtDate(doc.dateEmission)}`;
+  const v = { numero: doc.numero, date: fmtDate(doc.dateEmission, locale), montant: money(doc.netAPayer ?? doc.totalTTC), reste: money(reste), echeance: fmtDate(doc.dateEcheance, locale), jours: retard, n: nbRelances + 1 };
+  const subject = nbRelances >= 1 ? tIn(lang, 'relance.subjectN', v) : tIn(lang, 'relance.subject', v);
   const lignes = [
-    'Bonjour,',
+    tIn(lang, 'relance.hello'),
     '',
-    `Sauf erreur de notre part, la facture ${doc.numero} du ${fmtDate(doc.dateEmission)}, d'un montant de ${fmtEUR(doc.totalTTC)}${reste < doc.totalTTC ? ` (reste dû : ${fmtEUR(reste)})` : ''}, ` +
-      (retard > 0
-        ? `est arrivée à échéance le ${fmtDate(doc.dateEcheance)}, soit depuis ${retard} jour${retard > 1 ? 's' : ''}.`
-        : `arrive à échéance le ${fmtDate(doc.dateEcheance)}.`),
+    tIn(lang, retard > 0 ? 'relance.bodyLate' : 'relance.bodyDue', v),
     '',
-    `Merci de bien vouloir procéder à son règlement${profile.iban ? ` par virement (IBAN ${profile.iban}${profile.bic ? `, BIC ${profile.bic}` : ''})` : ''} dans les meilleurs délais, ou de nous indiquer si un paiement est déjà en cours.`,
+    tIn(lang, profile.iban ? 'relance.payIban' : 'relance.pay', { iban: profile.iban, bic: profile.bic ? `, BIC ${profile.bic}` : '' }),
     '',
   ];
-  if (doc.client?.type === 'pro' && retard > 0) {
-    lignes.push(
-      "Conformément aux conditions figurant sur la facture, tout retard de paiement entraîne des pénalités de retard ainsi qu'une indemnité forfaitaire de 40 € pour frais de recouvrement (art. L441-10 du Code de commerce).",
-      '',
-    );
-  }
-  lignes.push('Cordialement,', emetteur);
+  const retardMention = L(regime.mentions.retard, lang);
+  if (doc.client?.type === 'pro' && retard > 0 && retardMention) lignes.push(tIn(lang, 'relance.penalties'), '');
+  lignes.push(tIn(lang, 'relance.regards'), emetteur);
   const to = doc.client?.email ?? '';
   return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lignes.join('\n'))}`;
 }

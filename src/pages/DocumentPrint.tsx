@@ -3,17 +3,23 @@ import { useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/ui';
 import { db } from '../db/db';
-import { useClients, usePaiements, useProfile } from '../db/hooks';
-import { categorieOperation, type ClientSnapshot } from '../db/types';
-import { ligneTotalHT, montantPaye } from '../lib/documents';
-import { fmtDate, fmtEUR, fmtNum } from '../lib/format';
+import { useClients, usePaiements, useProfile, useRegime } from '../db/hooks';
+import type { ClientSnapshot } from '../db/types';
+import { tIn, useI18n, type Lang } from '../i18n';
+import { ligneTotalHT, montantPaye, normalizeDoc } from '../lib/documents';
+import { fmtDate, fmtMoneyIn, fmtNum } from '../lib/format';
+import { L, localeFor } from '../regimes';
+import { groupeOf } from '../regimes/engine';
 
 export default function DocumentPrint() {
   const { id } = useParams();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const doc = useLiveQuery(() => db.documents.get(Number(id)), [id]);
+  const { t } = useI18n();
+  const raw = useLiveQuery(() => db.documents.get(Number(id)), [id]);
+  const doc = raw ? normalizeDoc(raw) : raw;
   const { profile, loaded } = useProfile();
+  const regime = useRegime();
   const clients = useClients();
   const paiements = usePaiements();
   const printed = useRef(false);
@@ -25,53 +31,70 @@ export default function DocumentPrint() {
   useEffect(() => {
     if (doc && loaded && params.get('print') === '1' && !printed.current) {
       printed.current = true;
-      const t = setTimeout(() => window.print(), 450);
-      return () => clearTimeout(t);
+      const timer = setTimeout(() => window.print(), 450);
+      return () => clearTimeout(timer);
     }
   }, [doc, loaded, params]);
+
+  const lang: Lang = doc?.langue || profile.langueDocuments;
+  const tl = (key: string, vars?: Record<string, string | number>) => tIn(lang, key, vars);
+  // Deux-points : espace insécable avant en français, collé dans les autres langues.
+  const c = lang === 'fr' ? ' : ' : ': ';
 
   useEffect(() => {
     if (!doc) return;
     const prev = document.title;
-    const base = doc.numero || (doc.type === 'facture' ? 'Facture' : 'Devis');
+    const base = doc.numero || tl(doc.type === 'facture' ? 'doc.invoice' : doc.type === 'avoir' ? 'doc.creditNote' : 'doc.quote');
     document.title = client?.nom ? `${base} - ${client.nom}` : base;
     return () => {
       document.title = prev;
     };
-  }, [doc, client?.nom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, client?.nom, lang]);
 
-  if (!loaded || doc === undefined) return <div className="print-stage"><p className="muted">Chargement…</p></div>;
-  if (!doc) return <div className="print-stage"><p>Document introuvable.</p></div>;
+  if (!loaded || doc === undefined) return <div className="print-stage"><p className="muted">{t('common.loading')}</p></div>;
+  if (!doc) return <div className="print-stage"><p>{t('print.notFound')}</p></div>;
 
+  const locale = localeFor(lang, profile.pays);
+  const devise = doc.devise || profile.devise;
+  const money = (n: number) => fmtMoneyIn(locale, devise, n);
+  const date = (iso: string) => fmtDate(iso, locale);
   const isFacture = doc.type === 'facture';
   const isAvoir = doc.type === 'avoir';
-  const titre = isFacture ? 'FACTURE' : isAvoir ? 'AVOIR' : 'DEVIS';
-  const periode = doc.prestationDebut
-    ? doc.prestationFin && doc.prestationFin !== doc.prestationDebut
-      ? `Période : du ${fmtDate(doc.prestationDebut)} au ${fmtDate(doc.prestationFin)}`
-      : `Date de la ${doc.activite === 'vente' ? 'livraison' : 'prestation'} : ${fmtDate(doc.prestationDebut)}`
-    : '';
+  const titre = tl(isFacture ? 'print.invoice' : isAvoir ? 'print.creditNote' : 'print.quote');
   const paye = montantPaye(doc, paiements);
   const dernierPaiement = paiements.filter((p) => p.factureId === doc.id).sort((a, b) => b.date.localeCompare(a.date))[0];
   const brut = doc.lignes.reduce((s, l) => s + ligneTotalHT(l), 0);
   const remise = Math.min(doc.remise || 0, brut);
-  const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || 'Votre nom';
+  const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || tl('print.yourName');
   const proClient = client?.type === 'pro';
+  const periode = doc.prestationDebut
+    ? doc.prestationFin && doc.prestationFin !== doc.prestationDebut
+      ? tl('print.period', { from: date(doc.prestationDebut), to: date(doc.prestationFin) })
+      : tl(groupeOf(regime, doc.activite) === 'vente' ? 'print.deliveryDate' : 'print.serviceDate', { date: date(doc.prestationDebut) })
+    : '';
+  const categorie = groupeOf(regime, doc.activite) === 'vente' ? tl('print.catGoods') : tl('print.catServices');
+  const identifiants = regime.identifiants.filter((i) => profile.identifiants[i.id] && (!i.pourTva || profile.assujettiTVA));
+  const mentionFranchise = L(regime.tva.mentionFranchise, lang);
+  const mentionRetard = L(regime.mentions.retard, lang);
+  const mentionPied = regime.mentions.pied && (!regime.mentions.piedNatures || regime.mentions.piedNatures.includes(profile.nature)) ? L(regime.mentions.pied, lang) : '';
+  const mentionRetenue = L(regime.mentions.retenue, lang);
+  const idFooter = regime.identifiants[0] && profile.identifiants[regime.identifiants[0].id] ? `${L(regime.identifiants[0].label, lang)} ${profile.identifiants[regime.identifiants[0].id]}` : '';
 
   return (
     <div className="print-stage">
       <div className="print-toolbar no-print" style={{ margin: '-28px -16px 24px' }}>
         <button type="button" className="btn ghost" onClick={() => navigate(`/documents/${doc.id}`)}>
-          <Icon name="back" /> Retour au document
+          <Icon name="back" /> {t('print.backToDoc')}
         </button>
         <span className="spacer" style={{ flex: 1 }} />
-        <span className="small text-2">Choisissez « Enregistrer au format PDF » comme imprimante.</span>
+        <span className="small text-2">{t('print.hint')}</span>
         <button type="button" className="btn primary" onClick={() => window.print()}>
-          <Icon name="print" /> Imprimer / PDF
+          <Icon name="print" /> {t('common.printPdf')}
         </button>
       </div>
 
-      <article className={`sheet${profile.themeDocument === 'sombre' ? ' sheet-dark' : ''}`} style={{ ['--doc-accent' as string]: profile.couleur || '#2a78d6' }}>
+      <article className={`sheet${profile.themeDocument === 'sombre' ? ' sheet-dark' : ''}`} style={{ ['--doc-accent' as string]: profile.couleur || '#2a78d6' }} lang={lang}>
         <header className="sheet-head">
           <div className="sheet-emitter">
             {profile.logo && <img className="sheet-logo" src={profile.logo} alt="" style={{ display: 'block', marginBottom: 10 }} />}
@@ -86,67 +109,69 @@ export default function DocumentPrint() {
           </div>
           <div className="sheet-title">
             <h1>{titre}</h1>
-            <div className="num">{doc.numero || 'PROVISOIRE — brouillon'}</div>
+            <div className="num">{doc.numero || tl('print.provisional')}</div>
             <div className="dates">
-              <div>Date : {fmtDate(doc.dateEmission)}</div>
-              {!isAvoir && <div>{isFacture ? 'Échéance' : 'Valable jusqu’au'} : {fmtDate(doc.dateEcheance)}</div>}
+              <div>{tl('print.date')}{c}{date(doc.dateEmission)}</div>
+              {!isAvoir && <div>{tl(isFacture ? 'print.dueDate' : 'print.validUntil')}{c}{date(doc.dateEcheance)}</div>}
             </div>
           </div>
         </header>
 
         <section className="sheet-parties">
           <div className="sheet-box">
-            <div className="lbl">Émetteur</div>
+            <div className="lbl">{tl('print.issuer')}</div>
             <strong>{emetteur}</strong>
-            {profile.siret && <div>SIRET : {profile.siret}</div>}
-            {profile.assujettiTVA && profile.numeroTVA && <div>N° TVA : {profile.numeroTVA}</div>}
+            {identifiants.map((i) => (
+              <div key={i.id}>{L(i.label, lang)}{c}{profile.identifiants[i.id]}</div>
+            ))}
           </div>
           <div className="sheet-box">
-            <div className="lbl">{isFacture ? 'Facturé à' : 'Adressé à'}</div>
+            <div className="lbl">{tl(isFacture ? 'print.billedTo' : 'print.addressedTo')}</div>
             {client ? (
               <>
                 <strong>{client.nom}</strong>
                 {client.adresse && <div>{client.adresse}</div>}
                 {(client.codePostal || client.ville) && <div>{client.codePostal} {client.ville}</div>}
+                {client.pays && <div>{client.pays}</div>}
                 {client.email && <div>{client.email}</div>}
-                {client.siret && <div>SIRET : {client.siret}</div>}
+                {client.siret && <div>{L(regime.identifiantClient, lang)}{c}{client.siret}</div>}
               </>
             ) : (
-              <em className="vide">Aucun client sélectionné</em>
+              <em className="vide">{tl('print.noClient')}</em>
             )}
           </div>
         </section>
 
         {isAvoir && (
           <p className="sheet-objet">
-            <b>Avoir sur la facture {origine?.numero ?? ''}</b>
-            {origine?.dateEmission && <> du {fmtDate(origine.dateEmission)}</>}
-            {origine && <> (montant initial : {fmtEUR(origine.totalTTC)})</>}
+            <b>{tl('print.creditOn', { numero: origine?.numero ?? '' })}</b>
+            {origine?.dateEmission && <> ({date(origine.dateEmission)})</>}
+            {origine && <> — {tl('print.originalAmount', { montant: money(origine.totalTTC) })}</>}
           </p>
         )}
         {doc.objet && (
           <p className="sheet-objet">
-            <b>Objet :</b> {doc.objet}
+            <b>{tl('print.subject')}{c.trimEnd()}</b> {doc.objet}
           </p>
         )}
         {(periode || doc.bonCommande || doc.adresseLivraison || isFacture || isAvoir) && (
           <p className="sheet-objet meta">
             {periode && <span>{periode}</span>}
             {periode && (isFacture || isAvoir) && ' · '}
-            {(isFacture || isAvoir) && <span>Catégorie d'opération : {categorieOperation(doc.activite)}</span>}
-            {doc.bonCommande && <span> · N° de bon de commande : {doc.bonCommande}</span>}
-            {doc.adresseLivraison && <span> · Adresse de livraison : {doc.adresseLivraison}</span>}
+            {(isFacture || isAvoir) && <span>{tl('print.category')}{c}{categorie}</span>}
+            {doc.bonCommande && <span> · {tl('print.poNumber')}{c}{doc.bonCommande}</span>}
+            {doc.adresseLivraison && <span> · {tl('print.deliveryAddress')}{c}{doc.adresseLivraison}</span>}
           </p>
         )}
 
         <table className="lines">
           <thead>
             <tr>
-              <th>Description</th>
-              <th className="num">Qté</th>
-              <th className="num">Prix unit. HT</th>
-              {profile.assujettiTVA && <th className="num">TVA</th>}
-              <th className="num">Total HT</th>
+              <th>{tl('print.description')}</th>
+              <th className="num">{tl('print.qty')}</th>
+              <th className="num">{tl('print.unitPrice')}</th>
+              {profile.assujettiTVA && <th className="num">{regime.tva.nom}</th>}
+              <th className="num">{tl('print.lineTotal')}</th>
             </tr>
           </thead>
           <tbody>
@@ -154,9 +179,9 @@ export default function DocumentPrint() {
               <tr key={l.id}>
                 <td style={{ whiteSpace: 'pre-wrap' }}>{l.description}</td>
                 <td className="num">{fmtNum(l.quantite)}{l.unite ? ` ${l.unite}` : ''}</td>
-                <td className="num">{fmtEUR(l.prixUnitaire)}</td>
+                <td className="num">{money(l.prixUnitaire)}</td>
                 {profile.assujettiTVA && <td className="num">{fmtNum(l.tauxTVA)} %</td>}
-                <td className="num">{fmtEUR(ligneTotalHT(l))}</td>
+                <td className="num">{money(ligneTotalHT(l))}</td>
               </tr>
             ))}
           </tbody>
@@ -167,68 +192,65 @@ export default function DocumentPrint() {
             <tbody>
               {remise > 0 && (
                 <>
-                  <tr><td>Sous-total HT</td><td>{fmtEUR(brut)}</td></tr>
-                  <tr><td>Remise</td><td>− {fmtEUR(remise)}</td></tr>
+                  <tr><td>{tl('print.subtotal')}</td><td>{money(brut)}</td></tr>
+                  <tr><td>{tl('print.discount')}</td><td>− {money(remise)}</td></tr>
                 </>
               )}
-              <tr><td>Total HT</td><td>{fmtEUR(doc.totalHT)}</td></tr>
-              {profile.assujettiTVA && <tr><td>TVA</td><td>{fmtEUR(doc.totalTVA)}</td></tr>}
-              <tr className="grand"><td>{isAvoir ? "Montant de l'avoir" : profile.assujettiTVA ? 'Total TTC' : 'Total à payer'}</td><td>{fmtEUR(doc.totalTTC)}</td></tr>
-              {isFacture && paye > 0 && paye < doc.totalTTC && (
+              <tr><td>{tl('print.totalExcl')}</td><td>{money(doc.totalHT)}</td></tr>
+              {profile.assujettiTVA && <tr><td>{regime.tva.nom}</td><td>{money(doc.totalTVA)}</td></tr>}
+              <tr className="grand"><td>{isAvoir ? tl('print.creditAmount') : profile.assujettiTVA ? tl('print.totalIncl') : tl('print.totalDue')}</td><td>{money(doc.totalTTC)}</td></tr>
+              {doc.montantRetenue > 0 && (
                 <>
-                  <tr><td>Déjà réglé</td><td>− {fmtEUR(paye)}</td></tr>
-                  <tr><td><b>Reste à payer</b></td><td><b>{fmtEUR(doc.totalTTC - paye)}</b></td></tr>
+                  <tr><td>{tl('print.withholding', { pct: fmtNum(doc.retenue) })}</td><td>− {money(doc.montantRetenue)}</td></tr>
+                  <tr className="grand"><td>{tl('print.netDue')}</td><td>{money(doc.netAPayer)}</td></tr>
+                </>
+              )}
+              {isFacture && paye > 0 && paye < doc.netAPayer && (
+                <>
+                  <tr><td>{tl('print.alreadyPaid')}</td><td>− {money(paye)}</td></tr>
+                  <tr><td><b>{tl('print.remaining')}</b></td><td><b>{money(doc.netAPayer - paye)}</b></td></tr>
                 </>
               )}
             </tbody>
           </table>
         </div>
 
-        {isFacture && doc.statut === 'payee' && dernierPaiement && (
-          <p className="acquittee">Facture acquittée le {fmtDate(dernierPaiement.date)}.</p>
-        )}
+        {isFacture && doc.statut === 'payee' && dernierPaiement && <p className="acquittee">{tl('print.paidOn', { date: date(dernierPaiement.date) })}</p>}
 
         <section className="mentions">
           {doc.notes && (
             <div>
-              <h4>Notes</h4>
+              <h4>{tl('print.notes')}</h4>
               <div style={{ whiteSpace: 'pre-wrap' }}>{doc.notes}</div>
             </div>
           )}
-          {!profile.assujettiTVA && <div>TVA non applicable, art. 293 B du CGI.</div>}
+          {!profile.assujettiTVA && mentionFranchise && <div>{mentionFranchise}</div>}
+          {doc.montantRetenue > 0 && mentionRetenue && <div>{mentionRetenue}</div>}
           {isAvoir && (
             <div>
-              <h4>Modalités</h4>
-              <div>
-                Cet avoir annule ou corrige la facture {origine?.numero ?? ''} à hauteur de {fmtEUR(doc.totalTTC)}. Le montant est déduit des sommes restant dues ou,
-                si la facture a été réglée, remboursé par virement{profile.delaiPaiementJours ? ` sous ${profile.delaiPaiementJours} jours` : ''}.
-              </div>
+              <h4>{tl('print.terms')}</h4>
+              <div>{tl('print.creditTerms', { numero: origine?.numero ?? '', montant: money(doc.totalTTC) })}</div>
             </div>
           )}
           {isFacture && (
             <div>
-              <h4>Conditions de règlement</h4>
-              <div>{profile.conditionsPaiement || `Paiement à réception, au plus tard le ${fmtDate(doc.dateEcheance)}.`}</div>
+              <h4>{tl('print.paymentTerms')}</h4>
+              <div>{profile.conditionsPaiement || tl('print.defaultTerms', { date: date(doc.dateEcheance) })}</div>
               {(profile.iban || profile.bic) && (
                 <div>
-                  {profile.iban && <>IBAN : {profile.iban}</>}
+                  {profile.iban && <>IBAN{c}{profile.iban}</>}
                   {profile.iban && profile.bic && ' · '}
-                  {profile.bic && <>BIC : {profile.bic}</>}
+                  {profile.bic && <>BIC{c}{profile.bic}</>}
                 </div>
               )}
-              {proClient && (
-                <div>
-                  Pénalités de retard : trois fois le taux d'intérêt légal en vigueur, exigibles sans rappel dès le lendemain de la date d'échéance.
-                  Indemnité forfaitaire pour frais de recouvrement : 40 € (art. L441-10 et D441-5 du Code de commerce). Pas d'escompte pour paiement anticipé.
-                </div>
-              )}
+              {proClient && mentionRetard && <div>{mentionRetard}</div>}
             </div>
           )}
           {doc.type === 'devis' && (
             <div>
-              <div>Devis valable jusqu'au {fmtDate(doc.dateEcheance)}. {profile.conditionsPaiement}</div>
+              <div>{tl('print.quoteValid', { date: date(doc.dateEcheance) })} {profile.conditionsPaiement}</div>
               <div className="signature">
-                <div>Bon pour accord — date et signature du client :</div>
+                <div>{tl('print.signature')}</div>
               </div>
             </div>
           )}
@@ -237,11 +259,9 @@ export default function DocumentPrint() {
 
         <footer className="sheet-foot">
           <div>
-            {[emetteur, profile.adresse && `${profile.adresse}, ${profile.codePostal} ${profile.ville}`.trim(), profile.siret && `SIRET ${profile.siret}`, profile.email, profile.telephone]
-              .filter(Boolean)
-              .join(' · ')}
+            {[emetteur, profile.adresse && `${profile.adresse}, ${profile.codePostal} ${profile.ville}`.trim(), idFooter, profile.email, profile.telephone].filter(Boolean).join(' · ')}
           </div>
-          {profile.nature === 'liberal' && <div className="pays">Entrepreneur individuel — dispensé d'immatriculation au registre du commerce et des sociétés (RCS) et au répertoire des métiers (RM).</div>}
+          {mentionPied && <div className="pays">{mentionPied}</div>}
         </footer>
       </article>
     </div>

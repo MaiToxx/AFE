@@ -4,10 +4,10 @@ import { addDays, addMonths, todayISO } from './dates';
 import { finaliser, newDoc, saveDoc } from './documents';
 import { uid } from './format';
 
-export const FREQUENCES: { value: FrequenceRecurrence; label: string; mois: number }[] = [
-  { value: 'mensuelle', label: 'Tous les mois', mois: 1 },
-  { value: 'trimestrielle', label: 'Tous les trimestres', mois: 3 },
-  { value: 'annuelle', label: 'Tous les ans', mois: 12 },
+export const FREQUENCES: { value: FrequenceRecurrence; key: string; mois: number }[] = [
+  { value: 'mensuelle', key: 'freq.monthly', mois: 1 },
+  { value: 'trimestrielle', key: 'freq.quarterly', mois: 3 },
+  { value: 'annuelle', key: 'freq.yearly', mois: 12 },
 ];
 
 export function prochaineDate(iso: string, frequence: FrequenceRecurrence): string {

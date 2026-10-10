@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
-import { useLicense } from '../db/hooks';
+import { useLicense, useProfile } from '../db/hooks';
+import { LANGS, useI18n, type Lang } from '../i18n';
 import Automations from './Automations';
+import Onboarding from './Onboarding';
 import { Icon, type IconName } from './ui';
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -41,31 +43,32 @@ export function isDark(t: Theme): boolean {
   return t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 }
 
-const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
-  { to: '/', label: 'Tableau de bord', icon: 'dashboard', end: true },
-  { to: '/documents', label: 'Factures & devis', icon: 'file' },
-  { to: '/clients', label: 'Clients', icon: 'users' },
-  { to: '/cotisations', label: 'Cotisations', icon: 'calc' },
-  { to: '/recettes', label: 'Livre des recettes', icon: 'table' },
-  { to: '/parametres', label: 'Paramètres', icon: 'settings' },
+const NAV: { to: string; key: string; icon: IconName; end?: boolean }[] = [
+  { to: '/', key: 'nav.dashboard', icon: 'dashboard', end: true },
+  { to: '/documents', key: 'nav.documents', icon: 'file' },
+  { to: '/clients', key: 'nav.clients', icon: 'users' },
+  { to: '/cotisations', key: 'nav.contributions', icon: 'calc' },
+  { to: '/recettes', key: 'nav.ledger', icon: 'table' },
+  { to: '/parametres', key: 'nav.settings', icon: 'settings' },
 ];
 
 function LicenceBadge() {
   const lic = useLicense();
+  const { t, tn } = useI18n();
   const to = '/parametres?tab=licence';
   switch (lic.status) {
     case 'trial':
       return (
-        <Link to={to} className={`lic${lic.daysLeft <= 3 ? ' warning' : ''}`} title="Période d'essai">
+        <Link to={to} className={`lic${lic.daysLeft <= 3 ? ' warning' : ''}`} title={t('licence.trialTitle')}>
           <Icon name="info" />
-          <span>Essai : {lic.daysLeft} jour{lic.daysLeft > 1 ? 's' : ''} restant{lic.daysLeft > 1 ? 's' : ''}</span>
+          <span>{tn('licence.trialDays', lic.daysLeft)}</span>
         </Link>
       );
     case 'trial_over':
       return (
         <Link to={to} className="lic critical">
           <Icon name="alert" />
-          <span>Essai terminé — activer</span>
+          <span>{t('licence.trialOverShort')}</span>
         </Link>
       );
     case 'expired':
@@ -74,14 +77,14 @@ function LicenceBadge() {
       return (
         <Link to={to} className="lic critical">
           <Icon name="alert" />
-          <span>Licence à vérifier</span>
+          <span>{t('licence.checkShort')}</span>
         </Link>
       );
     case 'licensed':
       return (
-        <Link to={to} className="lic good" title={`Licence ${lic.license.id}`}>
+        <Link to={to} className="lic good" title={`${t('licence.number')} ${lic.license.id}`}>
           <Icon name="checkCircle" />
-          <span>Licence : {lic.license.name}</span>
+          <span>{t('licence.badge', { name: lic.license.name })}</span>
         </Link>
       );
     default:
@@ -92,9 +95,14 @@ function LicenceBadge() {
 export default function Layout() {
   const [theme, setTheme] = useTheme();
   const dark = isDark(theme);
+  const { t, lang, setLang } = useI18n();
+  const { loaded, exists } = useProfile();
+
+  if (loaded && !exists) return <Onboarding />;
+
   return (
     <div className="app">
-      <nav className="nav" aria-label="Navigation principale">
+      <nav className="nav" aria-label={t('nav.main')}>
         <div className="brand">
           <div className="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round">
@@ -103,22 +111,29 @@ export default function Layout() {
           </div>
           <div>
             <div className="brand-title">AFE</div>
-            <div className="brand-sub">Auto-entrepreneur</div>
+            <div className="brand-sub">{t('nav.brandSub')}</div>
           </div>
         </div>
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `item${isActive ? ' active' : ''}`}>
             <Icon name={n.icon} />
-            <span>{n.label}</span>
+            <span>{t(n.key)}</span>
           </NavLink>
         ))}
         <div className="nav-footer">
           <LicenceBadge />
-          <button type="button" className="btn ghost sm" onClick={() => setTheme(dark ? 'light' : 'dark')} aria-label={dark ? 'Passer en thème clair' : 'Passer en thème sombre'}>
-            <Icon name={dark ? 'sun' : 'moon'} size={16} />
-            <span>{dark ? 'Clair' : 'Sombre'}</span>
-          </button>
-          <div className="hint">Fonctionne hors ligne. Vos données restent sur cet appareil.</div>
+          <div className="nav-tools">
+            <button type="button" className="btn ghost sm" onClick={() => setTheme(dark ? 'light' : 'dark')} aria-label={dark ? t('nav.toLight') : t('nav.toDark')}>
+              <Icon name={dark ? 'sun' : 'moon'} size={16} />
+              <span>{dark ? t('nav.light') : t('nav.dark')}</span>
+            </button>
+            <select className="lang-select" value={lang} onChange={(e) => setLang(e.target.value as Lang)} aria-label={t('nav.language')}>
+              {LANGS.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="hint">{t('nav.offline')}</div>
           <div className="version">AFE v{__APP_VERSION__}</div>
         </div>
       </nav>

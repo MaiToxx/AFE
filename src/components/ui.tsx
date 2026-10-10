@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { t } from '../i18n';
 import { parseNum } from '../lib/format';
 
 const PATHS = {
@@ -140,7 +141,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
     >
       <div className="modal-head">
         <h2>{title}</h2>
-        <button type="button" className="btn ghost icon" onClick={onClose} aria-label="Fermer">
+        <button type="button" className="btn ghost icon" onClick={onClose} aria-label={t('common.close')}>
           <Icon name="x" />
         </button>
       </div>

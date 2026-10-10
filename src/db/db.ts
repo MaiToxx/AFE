@@ -1,18 +1,19 @@
 import Dexie, { type Table } from 'dexie';
-import type { Bareme, Client, Doc, Paiement, Prestation, Profile, Recurrence, Relance, Setting } from './types';
-import { DEFAULT_BAREMES } from '../lib/bareme';
+import { DEFAULT_BAREMES, baremeEqualsDefault } from '../lib/bareme';
 import { todayISO } from '../lib/dates';
+import { convertBaremeFR } from '../regimes/migrate';
+import type { Client, Doc, LegacyBareme, Paiement, Prestation, Profile, Recurrence, RegimeParamsRow, Relance, Setting } from './types';
 
 export class AfeDB extends Dexie {
   profile!: Table<Profile, number>;
   clients!: Table<Client, number>;
   documents!: Table<Doc, number>;
   paiements!: Table<Paiement, number>;
-  baremes!: Table<Bareme, number>;
   settings!: Table<Setting, string>;
   catalogue!: Table<Prestation, number>;
   relances!: Table<Relance, number>;
   recurrences!: Table<Recurrence, number>;
+  regimeParams!: Table<RegimeParamsRow, string>;
 
   constructor() {
     super('afe');
@@ -32,6 +33,27 @@ export class AfeDB extends Dexie {
       relances: '++id, factureId, date',
       recurrences: '++id, prochaine',
     });
+    // v4 : régimes multi-pays. Les barèmes français modifiés deviennent des surcharges de paramètres,
+    // SIRET et n° de TVA rejoignent les identifiants génériques.
+    this.version(4)
+      .stores({ regimeParams: 'cle, pays, annee' })
+      .upgrade(async (tx) => {
+        const baremes = (await tx.table('baremes').toArray()) as LegacyBareme[];
+        for (const b of baremes) {
+          if (baremeEqualsDefault(b)) continue;
+          await tx.table('regimeParams').put({ cle: `FR:${b.annee}`, pays: 'FR', annee: b.annee, params: convertBaremeFR(b) });
+        }
+        const p = (await tx.table('profile').get(1)) as (Partial<Profile> & { id: number }) | undefined;
+        if (p) {
+          await tx.table('profile').put({
+            ...p,
+            pays: p.pays || 'FR',
+            identifiants: { siret: p.siret ?? '', tva: p.numeroTVA ?? '', ...(p.identifiants ?? {}) },
+          });
+        }
+      });
+    // v5 : l'ancienne table des barèmes n'est plus utilisée.
+    this.version(5).stores({ baremes: null });
   }
 }
 
@@ -47,9 +69,12 @@ export const DEFAULT_PROFILE: Profile = {
   ville: '',
   email: '',
   telephone: '',
-  siret: '',
   siteWeb: '',
   activiteLibelle: '',
+  pays: 'FR',
+  langueDocuments: 'fr',
+  devise: 'EUR',
+  identifiants: {},
   activite: 'bnc',
   nature: 'liberal',
   doubleImmatriculation: false,
@@ -57,35 +82,27 @@ export const DEFAULT_PROFILE: Profile = {
   dateDebutActivite: '',
   acre: false,
   versementLiberatoire: false,
+  optionsRegime: {},
   assujettiTVA: false,
   tauxTVA: 20,
-  numeroTVA: '',
+  retenueSource: 0,
   logo: '',
   couleur: '#2a78d6',
+  themeDocument: 'clair',
   prefixeFacture: 'F',
   prefixeDevis: 'D',
   prefixeAvoir: 'AV',
   delaiPaiementJours: 30,
   validiteDevisJours: 30,
-  objectifCA: 0,
-  sauvegardeAuto: true,
-  themeDocument: 'clair',
-  conditionsPaiement: 'Paiement à 30 jours par virement bancaire.',
+  conditionsPaiement: '',
   mentionsPied: '',
   iban: '',
   bic: '',
+  objectifCA: 0,
+  sauvegardeAuto: true,
+  siret: '',
+  numeroTVA: '',
 };
-
-/** Ajoute les barèmes par défaut manquants (sans écraser ceux modifiés par l'utilisateur). */
-export async function ensureBaremes(): Promise<void> {
-  // Transaction : deux appels simultanés (StrictMode, double onglet) ne se marchent pas dessus.
-  await db.transaction('rw', db.baremes, async () => {
-    const existing = await db.baremes.toArray();
-    const years = new Set(existing.map((b) => b.annee));
-    const missing = DEFAULT_BAREMES.filter((b) => !years.has(b.annee));
-    if (missing.length) await db.baremes.bulkAdd(missing);
-  });
-}
 
 export async function getSetting(key: string): Promise<string | undefined> {
   return (await db.settings.get(key))?.value;
@@ -113,13 +130,15 @@ export async function saveProfile(patch: Partial<Profile>): Promise<void> {
 
 export interface Backup {
   app: 'afe';
-  version: 1;
+  version: 1 | 2;
   exportedAt: string;
   profile: Profile | null;
   clients: Client[];
   documents: Doc[];
   paiements: Paiement[];
-  baremes: Bareme[];
+  /** Anciennes sauvegardes (≤ 0.2.x). */
+  baremes?: LegacyBareme[];
+  regimeParams?: RegimeParamsRow[];
   /** Licence et début d'essai : permet de retrouver sa licence sur une nouvelle machine. */
   settings?: Setting[];
   catalogue?: Prestation[];
@@ -128,12 +147,12 @@ export interface Backup {
 }
 
 export async function exportBackup(): Promise<Backup> {
-  const [profile, clients, documents, paiements, baremes, settings, catalogue, relances, recurrences] = await Promise.all([
+  const [profile, clients, documents, paiements, regimeParams, settings, catalogue, relances, recurrences] = await Promise.all([
     db.profile.get(1),
     db.clients.toArray(),
     db.documents.toArray(),
     db.paiements.toArray(),
-    db.baremes.toArray(),
+    db.regimeParams.toArray(),
     db.settings.toArray(),
     db.catalogue.toArray(),
     db.relances.toArray(),
@@ -141,13 +160,13 @@ export async function exportBackup(): Promise<Backup> {
   ]);
   return {
     app: 'afe',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     profile: profile ?? null,
     clients,
     documents,
     paiements,
-    baremes,
+    regimeParams,
     settings,
     catalogue,
     relances,
@@ -155,33 +174,48 @@ export async function exportBackup(): Promise<Backup> {
   };
 }
 
-const DATA_TABLES = () => [db.profile, db.clients, db.documents, db.paiements, db.baremes, db.catalogue, db.relances, db.recurrences];
+const DATA_TABLES = () => [db.profile, db.clients, db.documents, db.paiements, db.regimeParams, db.catalogue, db.relances, db.recurrences];
 
 export async function importBackup(text: string): Promise<void> {
   const data = JSON.parse(text) as Partial<Backup>;
   const clients = data.clients;
   const documents = data.documents;
   if (data.app !== 'afe' || !Array.isArray(documents) || !Array.isArray(clients)) {
-    throw new Error("Ce fichier n'est pas une sauvegarde AFE valide.");
+    throw new Error('backup.invalid');
   }
   await db.transaction('rw', [...DATA_TABLES(), db.settings], async () => {
     await Promise.all(DATA_TABLES().map((t) => t.clear()));
-    if (data.profile) await db.profile.put({ ...DEFAULT_PROFILE, ...data.profile, id: 1 });
+    if (data.profile) {
+      const p = data.profile;
+      await db.profile.put({
+        ...DEFAULT_PROFILE,
+        ...p,
+        id: 1,
+        pays: p.pays || 'FR',
+        identifiants: { ...(p.siret ? { siret: p.siret } : {}), ...(p.numeroTVA ? { tva: p.numeroTVA } : {}), ...(p.identifiants ?? {}) },
+      });
+    }
     await db.clients.bulkAdd(clients);
     await db.documents.bulkAdd(documents);
     await db.paiements.bulkAdd(data.paiements ?? []);
-    await db.baremes.bulkAdd(data.baremes?.length ? data.baremes : DEFAULT_BAREMES);
+    if (data.regimeParams?.length) await db.regimeParams.bulkPut(data.regimeParams);
+    else if (data.baremes?.length) {
+      for (const b of data.baremes) {
+        if (!baremeEqualsDefault(b)) await db.regimeParams.put({ cle: `FR:${b.annee}`, pays: 'FR', annee: b.annee, params: convertBaremeFR(b) });
+      }
+    }
     await db.catalogue.bulkAdd(data.catalogue ?? []);
     await db.relances.bulkAdd(data.relances ?? []);
     await db.recurrences.bulkAdd(data.recurrences ?? []);
     // Les réglages locaux sont conservés ; ceux de la sauvegarde (licence) viennent par-dessus.
-    if (data.settings?.length) await db.settings.bulkPut(data.settings);
+    if (data.settings?.length) await db.settings.bulkPut(data.settings.filter((s) => s.key !== 'langue'));
   });
 }
 
 export async function clearAll(): Promise<void> {
   await db.transaction('rw', DATA_TABLES(), async () => {
     await Promise.all(DATA_TABLES().map((t) => t.clear()));
-    await db.baremes.bulkAdd(DEFAULT_BAREMES);
   });
 }
+
+export { DEFAULT_BAREMES };

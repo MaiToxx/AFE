@@ -1,8 +1,14 @@
 // Mises à jour automatiques (version bureau) : vérifie l'existence d'une nouvelle version,
 // propose de l'installer, puis relance l'application.
+import { t } from '../i18n';
 import { isTauri } from './desktop';
 
-export type UpdateResult = { status: 'indisponible' } | { status: 'a_jour' } | { status: 'installee'; version: string } | { status: 'refusee'; version: string } | { status: 'erreur'; message: string };
+export type UpdateResult =
+  | { status: 'indisponible' }
+  | { status: 'a_jour' }
+  | { status: 'installee'; version: string }
+  | { status: 'refusee'; version: string }
+  | { status: 'erreur'; message: string };
 
 export async function verifierMiseAJour(silencieux = false): Promise<UpdateResult> {
   if (!isTauri) return { status: 'indisponible' };
@@ -12,8 +18,8 @@ export async function verifierMiseAJour(silencieux = false): Promise<UpdateResul
     if (!update) return { status: 'a_jour' };
     const { ask } = await import('@tauri-apps/plugin-dialog');
     const ok = await ask(
-      `La version ${update.version} d'AFE est disponible (vous utilisez la ${update.currentVersion}).${update.body ? `\n\n${update.body}` : ''}\n\nInstaller maintenant ? L'application redémarrera.`,
-      { title: 'Mise à jour disponible', kind: 'info', okLabel: 'Installer', cancelLabel: 'Plus tard' },
+      `${t('update.available', { version: update.version, current: update.currentVersion })}${update.body ? `\n\n${update.body}` : ''}\n\n${t('update.installNow')}`,
+      { title: t('update.title'), kind: 'info', okLabel: t('update.install'), cancelLabel: t('update.later') },
     );
     if (!ok) return { status: 'refusee', version: update.version };
     await update.downloadAndInstall();

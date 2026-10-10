@@ -1,12 +1,8 @@
 // Modèle de données. Tout est stocké localement (IndexedDB via Dexie).
+import type { Lang } from '../i18n';
+import type { Frequence, Nature, RegimeParams } from '../regimes/types';
 
-/** Catégorie d'activité au sens URSSAF : détermine le taux de cotisations. */
-export type ActivityKind = 'vente' | 'bic' | 'bnc' | 'cipav' | 'meuble';
-
-/** Nature de l'activité : détermine la CFP et la taxe pour frais de chambre consulaire. */
-export type Nature = 'commercant' | 'artisan' | 'liberal';
-
-export type Frequence = 'mensuelle' | 'trimestrielle';
+export type { Frequence, Nature } from '../regimes/types';
 
 export type DocType = 'devis' | 'facture' | 'avoir';
 
@@ -22,40 +18,54 @@ export interface Profile {
   id: number; // toujours 1
   nom: string;
   prenom: string;
-  denomination: string; // nom commercial (optionnel)
+  denomination: string;
   adresse: string;
   codePostal: string;
   ville: string;
   email: string;
   telephone: string;
-  siret: string;
   siteWeb: string;
   activiteLibelle: string;
-  activite: ActivityKind; // activité par défaut des nouveaux documents
+  /** Pays d'imposition (code du régime : FR, BE, CH…, XX = générique). */
+  pays: string;
+  /** Langue par défaut des documents émis. */
+  langueDocuments: Lang;
+  devise: string;
+  /** Identifiants officiels selon le régime (siret, tva, nif, uid…). */
+  identifiants: Record<string, string>;
+  activite: string; // activité par défaut des nouveaux documents (id du régime)
   nature: Nature;
-  doubleImmatriculation: boolean; // artisan aussi inscrit au RCS
+  doubleImmatriculation: boolean;
   frequence: Frequence;
   dateDebutActivite: string; // ISO yyyy-mm-dd
+  /** Réduction de début d'activité (ACRE, tarifa plana, start-up…). */
   acre: boolean;
   versementLiberatoire: boolean;
+  /** Composantes facultatives du régime activées (clé = id de composante). */
+  optionsRegime: Record<string, boolean>;
   assujettiTVA: boolean;
   tauxTVA: number; // %
-  numeroTVA: string;
+  /** Retenue à la source appliquée sur les factures aux professionnels (%), si le régime le prévoit. */
+  retenueSource: number;
   // Personnalisation des documents
   logo: string; // data URL
   couleur: string; // hex
+  themeDocument: 'clair' | 'sombre';
   prefixeFacture: string;
   prefixeDevis: string;
   prefixeAvoir: string;
   delaiPaiementJours: number;
   validiteDevisJours: number;
-  objectifCA: number; // objectif de CA annuel (0 = non défini)
-  sauvegardeAuto: boolean; // version bureau : export JSON automatique au lancement
-  themeDocument: 'clair' | 'sombre'; // style des devis/factures/avoirs imprimés
   conditionsPaiement: string;
   mentionsPied: string;
   iban: string;
   bic: string;
+  objectifCA: number;
+  sauvegardeAuto: boolean;
+  /** @deprecated migrés dans `identifiants` (siret, tva). */
+  siret: string;
+  /** @deprecated */
+  numeroTVA: string;
 }
 
 export interface Client {
@@ -65,8 +75,10 @@ export interface Client {
   adresse: string;
   codePostal: string;
   ville: string;
+  pays: string;
   email: string;
   telephone: string;
+  /** Identifiant officiel du client (SIRET, NIF, UID… selon le régime). */
   siret: string;
   notes: string;
   createdAt: string;
@@ -87,6 +99,7 @@ export interface ClientSnapshot {
   adresse: string;
   codePostal: string;
   ville: string;
+  pays?: string;
   email: string;
   siret: string;
 }
@@ -102,9 +115,14 @@ export interface Doc {
   objet: string;
   dateEmission: string; // ISO
   dateEcheance: string; // facture : échéance ; devis : fin de validité
-  activite: ActivityKind;
+  activite: string;
+  /** Langue d'impression du document ('' = langue par défaut du profil). */
+  langue: Lang | '';
+  devise: string;
   lignes: Ligne[];
   remise: number; // € HT
+  /** Retenue à la source (%) pratiquée par le client professionnel, 0 si aucune. */
+  retenue: number;
   notes: string;
   devisId: number | null; // facture issue d'un devis
   factureId: number | null; // devis converti en facture
@@ -112,13 +130,16 @@ export interface Doc {
   avoirId: number | null; // facture : avoir émis dessus
   recurrenceId: number | null; // facture générée par une récurrence
   // Mentions complémentaires (facturation électronique 2026)
-  prestationDebut: string; // date (ou début de période) de la prestation / livraison
-  prestationFin: string; // fin de période (optionnel)
-  bonCommande: string; // n° de bon de commande du client
-  adresseLivraison: string; // si différente de l'adresse de facturation
+  prestationDebut: string;
+  prestationFin: string;
+  bonCommande: string;
+  adresseLivraison: string;
   totalHT: number;
   totalTVA: number;
   totalTTC: number;
+  montantRetenue: number;
+  /** Montant effectivement dû par le client (TTC − retenue). */
+  netAPayer: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -126,10 +147,10 @@ export interface Doc {
 export interface Paiement {
   id?: number;
   factureId: number | null; // null = encaissement libre (sans facture)
-  date: string; // date d'encaissement (fait générateur des cotisations)
-  montant: number; // TTC encaissé
+  date: string; // date d'encaissement (fait générateur des prélèvements)
+  montant: number; // montant encaissé (négatif = remboursement)
   moyen: MoyenPaiement;
-  activite: ActivityKind;
+  activite: string;
   libelle: string;
 }
 
@@ -161,79 +182,48 @@ export interface Recurrence {
   libelle: string;
   clientId: number | null;
   objet: string;
-  activite: ActivityKind;
+  activite: string;
   lignes: Ligne[];
   remise: number;
   notes: string;
   frequence: FrequenceRecurrence;
-  prochaine: string; // prochaine date d'émission
+  prochaine: string;
   actif: boolean;
   finaliserAuto: boolean;
   createdAt: string;
 }
 
-/** Réglages techniques (clé de licence, début d'essai…), conservés même après « Tout effacer ». */
+/** Réglages techniques (langue, clé de licence, début d'essai…), conservés même après « Tout effacer ». */
 export interface Setting {
   key: string;
   value: string;
 }
 
-export interface Bareme {
+/** Paramètres de régime modifiés par l'utilisateur (clé = `PAYS:année`, année 0 si non annuel). */
+export interface RegimeParamsRow {
+  cle: string;
+  pays: string;
   annee: number;
-  cotisations: Record<ActivityKind, number>; // % du CA
-  acreReduction: number; // % de réduction des cotisations pendant l'ACRE
-  versementLiberatoire: Record<ActivityKind, number>; // % du CA
-  cfp: Record<Nature, number>; // % du CA
-  chambre: {
-    cciVente: number;
-    cciServices: number;
-    cmaVente: number;
-    cmaServices: number;
-    doubleImmatriculation: number;
-  };
+  params: RegimeParams;
+}
+
+/** Ancien barème français (table `baremes`, versions ≤ 0.2.x), conservé pour la migration. */
+export interface LegacyBareme {
+  annee: number;
+  cotisations: Record<string, number>;
+  acreReduction: number;
+  versementLiberatoire: Record<string, number>;
+  cfp: Record<Nature, number>;
+  chambre: { cciVente: number; cciServices: number; cmaVente: number; cmaServices: number; doubleImmatriculation: number };
   plafondCA: { vente: number; services: number };
-  franchiseTVA: {
-    venteBase: number;
-    venteMajore: number;
-    servicesBase: number;
-    servicesMajore: number;
-  };
-  abattement: Record<ActivityKind, number>; // % (régime micro, sans VL)
+  franchiseTVA: { venteBase: number; venteMajore: number; servicesBase: number; servicesMajore: number };
+  abattement: Record<string, number>;
 }
 
-export const ACTIVITES: { value: ActivityKind; label: string; court: string }[] = [
-  { value: 'vente', label: 'Vente de marchandises, fourniture de logement (BIC)', court: 'Vente' },
-  { value: 'bic', label: 'Prestations de services commerciales ou artisanales (BIC)', court: 'Services BIC' },
-  { value: 'bnc', label: 'Prestations de services et professions libérales non réglementées (BNC)', court: 'BNC' },
-  { value: 'cipav', label: 'Professions libérales réglementées relevant de la CIPAV (BNC)', court: 'CIPAV' },
-  { value: 'meuble', label: 'Location de meublés de tourisme classés', court: 'Meublés classés' },
+export const MOYENS: { value: MoyenPaiement; key: string }[] = [
+  { value: 'virement', key: 'moyen.virement' },
+  { value: 'cb', key: 'moyen.cb' },
+  { value: 'especes', key: 'moyen.especes' },
+  { value: 'cheque', key: 'moyen.cheque' },
+  { value: 'autre', key: 'moyen.autre' },
 ];
-
-export const NATURES: { value: Nature; label: string }[] = [
-  { value: 'commercant', label: 'Commerçant (CCI)' },
-  { value: 'artisan', label: 'Artisan (CMA)' },
-  { value: 'liberal', label: 'Profession libérale' },
-];
-
-export const MOYENS: { value: MoyenPaiement; label: string }[] = [
-  { value: 'virement', label: 'Virement' },
-  { value: 'cb', label: 'Carte bancaire' },
-  { value: 'especes', label: 'Espèces' },
-  { value: 'cheque', label: 'Chèque' },
-  { value: 'autre', label: 'Autre' },
-];
-
-/** Les activités "vente" au sens des plafonds et seuils (vs prestations de services). */
-export function isVente(a: ActivityKind): boolean {
-  return a === 'vente';
-}
-
-/** Catégorie d'opération (mention attendue sur les factures depuis la réforme 2026). */
-export function categorieOperation(a: ActivityKind): string {
-  return a === 'vente' ? 'Livraison de biens' : 'Prestation de services';
-}
-
-/** Les activités relevant du seuil TVA "vente / hébergement" (85 000 €). */
-export function isTVAVente(a: ActivityKind): boolean {
-  return a === 'vente' || a === 'meuble';
-}

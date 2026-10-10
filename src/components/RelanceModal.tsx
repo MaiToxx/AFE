@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
+import { useRegime } from '../db/hooks';
 import type { CanalRelance, Doc, Profile, Relance } from '../db/types';
+import { useI18n } from '../i18n';
 import { todayISO } from '../lib/dates';
 import { openExternal } from '../lib/desktop';
-import { fmtDate, fmtEUR } from '../lib/format';
+import { fmtDate, fmtMoney } from '../lib/format';
 import { enregistrerRelance, relanceMailto } from '../lib/relances';
 import { Field, Icon, Modal } from './ui';
 
-export const CANAUX: { value: CanalRelance; label: string }[] = [
-  { value: 'email', label: 'E-mail' },
-  { value: 'telephone', label: 'Téléphone' },
-  { value: 'courrier', label: 'Courrier' },
-  { value: 'autre', label: 'Autre' },
+export const CANAUX: { value: CanalRelance; key: string }[] = [
+  { value: 'email', key: 'relance.canal.email' },
+  { value: 'telephone', key: 'relance.canal.phone' },
+  { value: 'courrier', key: 'relance.canal.mail' },
+  { value: 'autre', key: 'relance.canal.other' },
 ];
 
 /** Relance d'une facture impayée : e-mail pré-rempli + historique des relances. */
@@ -22,6 +24,8 @@ export default function RelanceModal({ open, onClose, doc, profile, reste, relan
   reste: number;
   relances: Relance[];
 }) {
+  const { t, tn } = useI18n();
+  const regime = useRegime();
   const [canal, setCanal] = useState<CanalRelance>('email');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -34,7 +38,7 @@ export default function RelanceModal({ open, onClose, doc, profile, reste, relan
   }, [open, doc.client?.email]);
 
   const derniere = relances[relances.length - 1];
-  const mailto = relanceMailto(doc, profile, reste, relances.length);
+  const mailto = relanceMailto(doc, profile, regime, reste, relances.length);
 
   async function enregistrer(ouvrirMail: boolean) {
     if (ouvrirMail) await openExternal(mailto);
@@ -46,39 +50,37 @@ export default function RelanceModal({ open, onClose, doc, profile, reste, relan
     <Modal
       open={open}
       onClose={onClose}
-      title={`Relancer ${doc.numero}`}
+      title={t('relance.title', { numero: doc.numero })}
       footer={
         <>
-          <button type="button" className="btn" onClick={onClose}>Annuler</button>
-          <button type="button" className="btn" onClick={() => enregistrer(false)}>Enregistrer la relance</button>
+          <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="button" className="btn" onClick={() => enregistrer(false)}>{t('relance.save')}</button>
           {canal === 'email' && (
             <button type="button" className="btn primary" onClick={() => enregistrer(true)} disabled={!doc.client?.email}>
-              <Icon name="file" /> Ouvrir l'e-mail et enregistrer
+              <Icon name="file" /> {t('relance.openAndSave')}
             </button>
           )}
         </>
       }
     >
       <p className="small text-2">
-        Reste dû : <b>{fmtEUR(reste)}</b> · échéance le {fmtDate(doc.dateEcheance)}.
-        {relances.length > 0 && derniere ? ` ${relances.length} relance${relances.length > 1 ? 's' : ''} déjà enregistrée${relances.length > 1 ? 's' : ''}, la dernière le ${fmtDate(derniere.date)}.` : ' Aucune relance pour l’instant.'}
+        {t('relance.remaining', { montant: fmtMoney(reste), date: fmtDate(doc.dateEcheance) })}{' '}
+        {relances.length > 0 && derniere ? tn('relance.history', relances.length, { date: fmtDate(derniere.date) }) : t('relance.none')}
       </p>
       <div className="form-row">
-        <Field label="Canal">
+        <Field label={t('relance.channel')}>
           <select value={canal} onChange={(e) => setCanal(e.target.value as CanalRelance)}>
             {CANAUX.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
+              <option key={c.value} value={c.value}>{t(c.key)}</option>
             ))}
           </select>
         </Field>
-        <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label={t('common.date')}><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
-      {canal === 'email' && !doc.client?.email && <div className="notice warning">Ce client n'a pas d'adresse e-mail enregistrée : renseignez-la dans sa fiche, ou choisissez un autre canal.</div>}
-      {canal === 'email' && doc.client?.email && (
-        <p className="small muted">Un e-mail pré-rempli (montant, échéance, retard, pénalités pour les professionnels) s'ouvrira dans votre messagerie à l'adresse {doc.client.email}. Pensez à y joindre le PDF de la facture.</p>
-      )}
-      <Field label="Note (optionnel)">
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Ex. Promesse de règlement sous 8 jours." />
+      {canal === 'email' && !doc.client?.email && <div className="notice warning">{t('relance.noEmail')}</div>}
+      {canal === 'email' && doc.client?.email && <p className="small muted">{t('relance.mailHelp', { email: doc.client.email })}</p>}
+      <Field label={t('relance.note')}>
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder={t('relance.notePlaceholder')} />
       </Field>
     </Modal>
   );

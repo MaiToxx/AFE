@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useI18n } from '../i18n';
 import { Icon } from './ui';
 
 export interface Series {
@@ -39,7 +40,6 @@ interface BarChartProps {
   highlightIndex?: number;
   height?: number;
   ariaLabel: string;
-  /** Libellé de la colonne « catégorie » dans la vue tableau. */
   categoryLabel?: string;
 }
 
@@ -48,7 +48,8 @@ interface BarChartProps {
  * survol par colonne avec infobulle listant toutes les séries, légende dès 2 séries,
  * et vue tableau équivalente.
  */
-export function BarChart({ categories, series, format, formatTick = format, highlightIndex, height = 240, ariaLabel, categoryLabel = 'Période' }: BarChartProps) {
+export function BarChart({ categories, series, format, formatTick = format, highlightIndex, height = 240, ariaLabel, categoryLabel }: BarChartProps) {
+  const { t } = useI18n();
   const [ref, width] = useWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
   const [table, setTable] = useState(false);
@@ -56,7 +57,7 @@ export function BarChart({ categories, series, format, formatTick = format, high
   const max = Math.max(0, ...series.flatMap((s) => s.values));
   const yMax = niceCeil(max > 0 ? max * 1.08 : 1);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * yMax);
-  const tickW = Math.max(...ticks.map((t) => formatTick(t).length)) * 6.6 + 14;
+  const tickW = Math.max(...ticks.map((tk) => formatTick(tk).length)) * 6.6 + 14;
   const m = { top: 20, right: 12, bottom: 28, left: Math.ceil(tickW) };
   const plotW = Math.max(60, width - m.left - m.right);
   const plotH = height - m.top - m.bottom;
@@ -84,7 +85,7 @@ export function BarChart({ categories, series, format, formatTick = format, high
     <div className="chart-block">
       <div className="chart-tools" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
         {series.length >= 2 ? (
-          <div className="legend" aria-label="Légende">
+          <div className="legend" aria-label={t('chart.legend')}>
             {series.map((s) => (
               <span key={s.name} className="key">
                 <i className="swatch" style={{ background: s.color }} />
@@ -95,9 +96,9 @@ export function BarChart({ categories, series, format, formatTick = format, high
         ) : (
           <span />
         )}
-        <button type="button" className="btn ghost sm" onClick={() => setTable((t) => !t)} aria-pressed={table}>
+        <button type="button" className="btn ghost sm" onClick={() => setTable((v) => !v)} aria-pressed={table}>
           <Icon name={table ? 'chart' : 'table'} size={15} />
-          {table ? 'Graphique' : 'Tableau'}
+          {table ? t('chart.chart') : t('chart.table')}
         </button>
       </div>
 
@@ -106,7 +107,7 @@ export function BarChart({ categories, series, format, formatTick = format, high
           <table className="table">
             <thead>
               <tr>
-                <th>{categoryLabel}</th>
+                <th>{categoryLabel ?? t('chart.period')}</th>
                 {series.map((s) => (
                   <th key={s.name} className="num">{s.name}</th>
                 ))}
@@ -124,7 +125,7 @@ export function BarChart({ categories, series, format, formatTick = format, high
             </tbody>
             <tfoot>
               <tr>
-                <td>Total</td>
+                <td>{t('common.total')}</td>
                 {series.map((s) => (
                   <td key={s.name} className="num">{format(s.values.reduce((a, b) => a + b, 0))}</td>
                 ))}
@@ -135,11 +136,11 @@ export function BarChart({ categories, series, format, formatTick = format, high
       ) : (
         <div className="chart" ref={ref} onPointerLeave={() => setHover(null)} style={{ height }}>
           <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={ariaLabel}>
-            {ticks.map((t) => (
-              <g key={t}>
-                <line className={t === 0 ? 'baseline' : 'grid-line'} x1={m.left} x2={width - m.right} y1={y(t)} y2={y(t)} />
-                <text className="tick" x={m.left - 8} y={y(t) + 4} textAnchor="end">
-                  {formatTick(t)}
+            {ticks.map((tk) => (
+              <g key={tk}>
+                <line className={tk === 0 ? 'baseline' : 'grid-line'} x1={m.left} x2={width - m.right} y1={y(tk)} y2={y(tk)} />
+                <text className="tick" x={m.left - 8} y={y(tk) + 4} textAnchor="end">
+                  {formatTick(tk)}
                 </text>
               </g>
             ))}
@@ -186,7 +187,7 @@ export function BarChart({ categories, series, format, formatTick = format, high
           )}
           {empty && (
             <div className="muted small" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
-              Aucune donnée sur cette période
+              {t('chart.noData')}
             </div>
           )}
         </div>
@@ -223,12 +224,13 @@ export function Meter({ label, value, max, format, marker, note, goal = false }:
   /** Objectif à atteindre (vert une fois atteint) plutôt que seuil à ne pas dépasser. */
   goal?: boolean;
 }) {
+  const { t } = useI18n();
   const ratio = max > 0 ? value / max : 0;
   const pct = Math.min(100, Math.max(0, ratio * 100));
   const severity = goal ? (ratio >= 1 ? 'good' : '') : ratio >= 1 ? 'critical' : ratio >= 0.8 ? 'warning' : '';
   const status = goal
-    ? ratio >= 1 ? 'Objectif atteint' : `${Math.round(ratio * 100)} % de l’objectif`
-    : ratio >= 1 ? 'Seuil dépassé' : ratio >= 0.8 ? 'Proche du seuil' : 'Sous le seuil';
+    ? ratio >= 1 ? t('meter.goalReached') : t('meter.goalPct', { pct: Math.round(ratio * 100) })
+    : ratio >= 1 ? t('meter.over') : ratio >= 0.8 ? t('meter.near') : t('meter.under');
   return (
     <div className={`meter ${severity}`}>
       <div className="meter-head">

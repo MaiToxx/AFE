@@ -1,15 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { Doc, FrequenceRecurrence } from '../db/types';
-import { creerRecurrence, FREQUENCES, prochaineDate } from '../lib/recurrences';
+import { useI18n } from '../i18n';
+import { FREQUENCES, creerRecurrence, prochaineDate } from '../lib/recurrences';
 import { Check, Field, Icon, Modal } from './ui';
 
 /** Transforme une facture en modèle récurrent. */
-export default function RecurrenceModal({ open, onClose, doc, onCreated }: {
-  open: boolean;
-  onClose: () => void;
-  doc: Doc;
-  onCreated: (id: number) => void;
-}) {
+export default function RecurrenceModal({ open, onClose, doc, onCreated }: { open: boolean; onClose: () => void; doc: Doc; onCreated: (id: number) => void }) {
+  const { t } = useI18n();
   const [libelle, setLibelle] = useState('');
   const [frequence, setFrequence] = useState<FrequenceRecurrence>('mensuelle');
   const [prochaine, setProchaine] = useState('');
@@ -18,24 +15,24 @@ export default function RecurrenceModal({ open, onClose, doc, onCreated }: {
 
   useEffect(() => {
     if (open) {
-      setLibelle(doc.objet || doc.lignes[0]?.description || 'Facture récurrente');
+      setLibelle(doc.objet || doc.lignes[0]?.description || t('recurrence.defaultName'));
       setFrequence('mensuelle');
       setProchaine(prochaineDate(doc.dateEmission, 'mensuelle'));
       setFinaliserAuto(false);
       setError('');
     }
-  }, [open, doc]);
+  }, [open, doc, t]);
 
   async function creer() {
     if (!doc.clientId) {
-      setError('La facture doit avoir un client.');
+      setError(t('recurrence.needClient'));
       return;
     }
     if (!prochaine) {
-      setError('Indiquez la date de la prochaine facture.');
+      setError(t('recurrence.needDate'));
       return;
     }
-    const id = await creerRecurrence(doc, { libelle: libelle.trim() || 'Facture récurrente', frequence, prochaine, finaliserAuto });
+    const id = await creerRecurrence(doc, { libelle: libelle.trim() || t('recurrence.defaultName'), frequence, prochaine, finaliserAuto });
     onClose();
     onCreated(id);
   }
@@ -44,19 +41,19 @@ export default function RecurrenceModal({ open, onClose, doc, onCreated }: {
     <Modal
       open={open}
       onClose={onClose}
-      title="Rendre cette facture récurrente"
+      title={t('recurrence.title')}
       footer={
         <>
-          <button type="button" className="btn" onClick={onClose}>Annuler</button>
-          <button type="button" className="btn primary" onClick={creer}><Icon name="check" /> Créer le modèle</button>
+          <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="button" className="btn primary" onClick={creer}><Icon name="check" /> {t('recurrence.create')}</button>
         </>
       }
     >
       {error && <div className="notice critical">{error}</div>}
-      <p className="small text-2">À chaque échéance, une nouvelle facture reprenant ces lignes est créée automatiquement au lancement de l'application.</p>
-      <Field label="Nom du modèle"><input type="text" value={libelle} onChange={(e) => setLibelle(e.target.value)} /></Field>
+      <p className="small text-2">{t('recurrence.intro')}</p>
+      <Field label={t('recurrence.name')}><input type="text" value={libelle} onChange={(e) => setLibelle(e.target.value)} /></Field>
       <div className="form-row">
-        <Field label="Fréquence">
+        <Field label={t('recurrence.frequency')}>
           <select
             value={frequence}
             onChange={(e) => {
@@ -66,18 +63,13 @@ export default function RecurrenceModal({ open, onClose, doc, onCreated }: {
             }}
           >
             {FREQUENCES.map((f) => (
-              <option key={f.value} value={f.value}>{f.label}</option>
+              <option key={f.value} value={f.value}>{t(f.key)}</option>
             ))}
           </select>
         </Field>
-        <Field label="Prochaine facture le"><input type="date" value={prochaine} onChange={(e) => setProchaine(e.target.value)} /></Field>
+        <Field label={t('recurrence.nextOn')}><input type="date" value={prochaine} onChange={(e) => setProchaine(e.target.value)} /></Field>
       </div>
-      <Check
-        label="Finaliser automatiquement (numéro attribué, statut « envoyée »)"
-        help="Sinon, la facture est créée en brouillon : vous la vérifiez puis la finalisez."
-        checked={finaliserAuto}
-        onChange={setFinaliserAuto}
-      />
+      <Check label={t('recurrence.autoFinalize')} help={t('recurrence.autoFinalizeHelp')} checked={finaliserAuto} onChange={setFinaliserAuto} />
     </Modal>
   );
 }

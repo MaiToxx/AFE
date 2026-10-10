@@ -1,52 +1,54 @@
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Badge, Empty, Icon, PageHeader } from '../components/ui';
 import RecurrencesList from '../components/RecurrencesList';
+import { Badge, Empty, Icon, PageHeader } from '../components/ui';
 import { useClients, useDocuments, usePaiements, useRelances } from '../db/hooks';
 import type { Doc, DocType } from '../db/types';
+import { useI18n } from '../i18n';
 import { todayISO } from '../lib/dates';
 import { montantPaye, statutInfo, supprimerDoc } from '../lib/documents';
-import { fmtDate, fmtEUR } from '../lib/format';
+import { fmtDate, fmtMoney } from '../lib/format';
 
-const STATUTS: Record<DocType, { value: string; label: string }[]> = {
+const STATUTS: Record<DocType, { value: string; key: string }[]> = {
   facture: [
-    { value: 'tous', label: 'Tous les statuts' },
-    { value: 'brouillon', label: 'Brouillons' },
-    { value: 'envoyee', label: 'En attente de paiement' },
-    { value: 'retard', label: 'En retard' },
-    { value: 'payee', label: 'Payées' },
-    { value: 'annulee', label: 'Annulées' },
+    { value: 'tous', key: 'docs.allStatuses' },
+    { value: 'brouillon', key: 'docs.f.drafts' },
+    { value: 'envoyee', key: 'docs.f.awaiting' },
+    { value: 'retard', key: 'docs.f.late' },
+    { value: 'payee', key: 'docs.f.paid' },
+    { value: 'annulee', key: 'docs.f.cancelled' },
   ],
   devis: [
-    { value: 'tous', label: 'Tous les statuts' },
-    { value: 'brouillon', label: 'Brouillons' },
-    { value: 'envoye', label: 'Envoyés' },
-    { value: 'accepte', label: 'Acceptés' },
-    { value: 'refuse', label: 'Refusés' },
+    { value: 'tous', key: 'docs.allStatuses' },
+    { value: 'brouillon', key: 'docs.f.drafts' },
+    { value: 'envoye', key: 'docs.q.sent' },
+    { value: 'accepte', key: 'docs.q.accepted' },
+    { value: 'refuse', key: 'docs.q.refused' },
   ],
   avoir: [
-    { value: 'tous', label: 'Tous les statuts' },
-    { value: 'brouillon', label: 'Brouillons' },
-    { value: 'envoye', label: 'Émis' },
+    { value: 'tous', key: 'docs.allStatuses' },
+    { value: 'brouillon', key: 'docs.f.drafts' },
+    { value: 'envoye', key: 'docs.c.issued' },
   ],
 };
 
-const LABELS: Record<DocType, { onglet: string; vide: string; nouveau: string; date: string }> = {
-  facture: { onglet: 'Factures', vide: 'Aucune facture', nouveau: 'Nouvelle facture', date: 'Échéance' },
-  devis: { onglet: 'Devis', vide: 'Aucun devis', nouveau: 'Nouveau devis', date: 'Validité' },
-  avoir: { onglet: 'Avoirs', vide: 'Aucun avoir', nouveau: '', date: 'Date' },
+const TABS: Record<DocType, { onglet: string; vide: string; nouveau: string; date: string }> = {
+  facture: { onglet: 'docs.tabInvoices', vide: 'docs.noInvoice', nouveau: 'docs.newInvoice', date: 'docs.dueDate' },
+  devis: { onglet: 'docs.tabQuotes', vide: 'docs.noQuote', nouveau: 'docs.newQuote', date: 'docs.validity' },
+  avoir: { onglet: 'docs.tabCredits', vide: 'docs.noCredit', nouveau: '', date: 'common.date' },
 };
 
 export default function Documents() {
+  const { t, tn } = useI18n();
   const [params, setParams] = useSearchParams();
-  const t = params.get('type');
-  const tab: DocType | 'recurrente' = t === 'devis' || t === 'avoir' || t === 'recurrente' ? t : 'facture';
+  const tp = params.get('type');
+  const tab: DocType | 'recurrente' = tp === 'devis' || tp === 'avoir' || tp === 'recurrente' ? tp : 'facture';
   const type: DocType = tab === 'recurrente' ? 'facture' : tab;
-  const relances = useRelances();
   const navigate = useNavigate();
   const docs = useDocuments();
   const paiements = usePaiements();
   const clients = useClients();
+  const relances = useRelances();
   const [q, setQ] = useState('');
   const [statut, setStatut] = useState('tous');
   const today = todayISO();
@@ -64,32 +66,31 @@ export default function Documents() {
       })
       .filter((d) => !s || [d.numero, d.objet, clientName(d)].some((v) => v.toLowerCase().includes(s)))
       .sort((a, b) => b.dateEmission.localeCompare(a.dateEmission) || b.numeroSeq - a.numeroSeq || (b.id ?? 0) - (a.id ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs, type, statut, q, clients, today]);
 
   const total = list.reduce((s, d) => s + (d.statut === 'annulee' ? 0 : d.totalTTC), 0);
 
-  function switchType(t: DocType | 'recurrente') {
-    setParams({ type: t });
+  function switchType(k: DocType | 'recurrente') {
+    setParams({ type: k });
     setStatut('tous');
   }
 
   async function remove(d: Doc) {
-    if (confirm('Supprimer ce brouillon ?')) await supprimerDoc(d);
+    if (confirm(t('docs.confirmDeleteDraft'))) await supprimerDoc(d);
   }
-
-  const isFacture = type === 'facture';
 
   return (
     <>
       <PageHeader
-        title="Factures & devis"
+        title={t('docs.title')}
         actions={
           <>
             <button type="button" className="btn" onClick={() => navigate('/documents/nouveau?type=devis')}>
-              <Icon name="plus" /> Devis
+              <Icon name="plus" /> {t('doc.quote')}
             </button>
             <button type="button" className="btn primary" onClick={() => navigate('/documents/nouveau?type=facture')}>
-              <Icon name="plus" /> Facture
+              <Icon name="plus" /> {t('doc.invoice')}
             </button>
           </>
         }
@@ -97,7 +98,7 @@ export default function Documents() {
       <div className="tabs" role="tablist">
         {(['facture', 'devis', 'avoir', 'recurrente'] as const).map((k) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => switchType(k)}>
-            {k === 'recurrente' ? 'Récurrentes' : LABELS[k].onglet}
+            {k === 'recurrente' ? t('docs.tabRecurring') : t(TABS[k].onglet)}
           </button>
         ))}
       </div>
@@ -106,83 +107,77 @@ export default function Documents() {
           <RecurrencesList />
         ) : (
           <>
-        <div className="toolbar">
-          <input type="text" placeholder="Numéro, client, objet…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Rechercher" />
-          <select value={statut} onChange={(e) => setStatut(e.target.value)} aria-label="Filtrer par statut">
-            {STATUTS[type].map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
-          <span className="spacer" />
-          <span className="small text-2">{list.length} document{list.length > 1 ? 's' : ''} · {fmtEUR(total)}</span>
-        </div>
-        {list.length === 0 ? (
-          <Empty
-            title={LABELS[type].vide}
-            text={
-              q || statut !== 'tous'
-                ? 'Aucun document ne correspond à ces critères.'
-                : type === 'avoir'
-                  ? 'Un avoir se crée depuis une facture finalisée (bouton « Créer un avoir » dans la facture) : c’est la seule façon légale de corriger ou d’annuler une facture déjà transmise.'
-                  : `Créez votre ${isFacture ? 'première facture' : 'premier devis'} en un clic.`
-            }
-            action={!q && statut === 'tous' && type !== 'avoir' && (
-              <button type="button" className="btn primary" onClick={() => navigate(`/documents/nouveau?type=${type}`)}>
-                <Icon name="plus" /> {LABELS[type].nouveau}
-              </button>
-            )}
-          />
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Numéro</th>
-                  <th>Date</th>
-                  <th>Client</th>
-                  <th>Objet</th>
-                  <th className="num">Montant TTC</th>
-                  <th>Statut</th>
-                  <th>{LABELS[type].date}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((d) => {
-                  const paye = montantPaye(d, paiements);
-                  const st = statutInfo(d, paye, today);
-                  const nbRel = relances.filter((r) => r.factureId === d.id).length;
-                  return (
-                    <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
-                      <td className="tnum"><b>{d.numero || <span className="muted">Brouillon</span>}</b></td>
-                      <td className="tnum">{fmtDate(d.dateEmission)}</td>
-                      <td>{clientName(d)}</td>
-                      <td className="text-2 ellipsis" title={d.objet}>{d.objet || <span className="muted">—</span>}</td>
-                      <td className="num">{type === 'avoir' ? `− ${fmtEUR(d.totalTTC)}` : fmtEUR(d.totalTTC)}</td>
-                      <td>
-                        <Badge tone={st.tone}>{st.label}</Badge>
-                        {nbRel > 0 && d.statut === 'envoyee' && <div className="small muted">relancée ×{nbRel}</div>}
-                      </td>
-                      <td className="tnum text-2">{fmtDate(d.dateEcheance)}</td>
-                      <td>
-                        <div className="row-actions" onClick={(e) => e.stopPropagation()}>
-                          <button type="button" className="btn ghost sm icon" title="PDF / Imprimer" aria-label="PDF / Imprimer" onClick={() => navigate(`/documents/${d.id}/imprimer?print=1`)}>
-                            <Icon name="print" size={15} />
-                          </button>
-                          {d.statut === 'brouillon' && (
-                            <button type="button" className="btn danger sm icon" title="Supprimer" aria-label="Supprimer" onClick={() => remove(d)}>
-                              <Icon name="trash" size={15} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
+            <div className="toolbar">
+              <input type="text" placeholder={t('docs.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />
+              <select value={statut} onChange={(e) => setStatut(e.target.value)} aria-label={t('docs.filterStatus')}>
+                {STATUTS[type].map((s) => (
+                  <option key={s.value} value={s.value}>{t(s.key)}</option>
+                ))}
+              </select>
+              <span className="spacer" />
+              <span className="small text-2">{tn('docs.count', list.length)} · {fmtMoney(total)}</span>
+            </div>
+            {list.length === 0 ? (
+              <Empty
+                title={t(TABS[type].vide)}
+                text={q || statut !== 'tous' ? t('common.noMatch') : type === 'avoir' ? t('docs.creditHint') : t('docs.createFirst')}
+                action={!q && statut === 'tous' && type !== 'avoir' && (
+                  <button type="button" className="btn primary" onClick={() => navigate(`/documents/nouveau?type=${type}`)}>
+                    <Icon name="plus" /> {t(TABS[type].nouveau)}
+                  </button>
+                )}
+              />
+            ) : (
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{t('docs.number')}</th>
+                      <th>{t('common.date')}</th>
+                      <th>{t('common.client')}</th>
+                      <th>{t('editor.subject')}</th>
+                      <th className="num">{t('docs.amountIncl')}</th>
+                      <th>{t('common.status')}</th>
+                      <th>{t(TABS[type].date)}</th>
+                      <th />
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                  </thead>
+                  <tbody>
+                    {list.map((d) => {
+                      const paye = montantPaye(d, paiements);
+                      const st = statutInfo(d, paye, today);
+                      const nbRel = relances.filter((r) => r.factureId === d.id).length;
+                      return (
+                        <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
+                          <td className="tnum"><b>{d.numero || <span className="muted">{t('status.draft')}</span>}</b></td>
+                          <td className="tnum">{fmtDate(d.dateEmission)}</td>
+                          <td>{clientName(d)}</td>
+                          <td className="text-2 ellipsis" title={d.objet}>{d.objet || <span className="muted">—</span>}</td>
+                          <td className="num">{type === 'avoir' ? `− ${fmtMoney(d.totalTTC)}` : fmtMoney(d.totalTTC)}</td>
+                          <td>
+                            <Badge tone={st.tone}>{t(st.key)}</Badge>
+                            {nbRel > 0 && d.statut === 'envoyee' && <div className="small muted">{t('docs.reminded', { n: nbRel })}</div>}
+                          </td>
+                          <td className="tnum text-2">{fmtDate(d.dateEcheance)}</td>
+                          <td>
+                            <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                              <button type="button" className="btn ghost sm icon" title={t('docs.pdf')} aria-label={t('docs.pdf')} onClick={() => navigate(`/documents/${d.id}/imprimer?print=1`)}>
+                                <Icon name="print" size={15} />
+                              </button>
+                              {d.statut === 'brouillon' && (
+                                <button type="button" className="btn danger sm icon" title={t('common.delete')} aria-label={t('common.delete')} onClick={() => remove(d)}>
+                                  <Icon name="trash" size={15} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </>
         )}
       </div>

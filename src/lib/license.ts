@@ -1,6 +1,6 @@
 // Vérification hors ligne des clés de licence (ECDSA P-256 via WebCrypto).
 // Les clés sont émises par scripts/license/issue.mjs avec la clé privée du vendeur ;
-// seule la clé publique est embarquée ici.
+// seule la clé publique est embarquée ici. Les messages sont des clés de traduction.
 import { addDays, parseISO, todayISO } from './dates';
 import { PUBLIC_KEY_JWK } from './license-public-key';
 
@@ -30,7 +30,7 @@ export type LicenseStatus =
   | { status: 'licensed'; license: LicensePayload }
   | { status: 'expired'; license: LicensePayload }
   | { status: 'unsupported'; license: LicensePayload }
-  | { status: 'invalid'; reason: string };
+  | { status: 'invalid'; reasonKey: string };
 
 /** La finalisation de documents est réservée à l'essai en cours et aux licences valides. */
 export function canFinalize(s: LicenseStatus): boolean {
@@ -49,19 +49,19 @@ function b64uToBytes(s: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-export function parseKey(raw: string): { data: Uint8Array<ArrayBuffer>; sig: Uint8Array<ArrayBuffer>; payload: LicensePayload } | { error: string } {
+export function parseKey(raw: string): { data: Uint8Array<ArrayBuffer>; sig: Uint8Array<ArrayBuffer>; payload: LicensePayload } | { errorKey: string } {
   const clean = raw.replace(/\s+/g, '');
-  if (!clean.startsWith(PREFIX)) return { error: 'Cette clé ne commence pas par « AFE1- » : vérifiez la copie.' };
+  if (!clean.startsWith(PREFIX)) return { errorKey: 'licence.err.prefix' };
   const [p, s] = clean.slice(PREFIX.length).split('.');
-  if (!p || !s) return { error: 'Clé incomplète : vérifiez que vous avez copié la clé entière.' };
+  if (!p || !s) return { errorKey: 'licence.err.incomplete' };
   try {
     const data = b64uToBytes(p);
     const sig = b64uToBytes(s);
     const payload = JSON.parse(new TextDecoder().decode(data)) as LicensePayload;
-    if (payload.v !== 1 || !payload.name || !payload.email) return { error: 'Contenu de licence inattendu.' };
+    if (payload.v !== 1 || !payload.name || !payload.email) return { errorKey: 'licence.err.content' };
     return { data, sig, payload };
   } catch {
-    return { error: 'Clé illisible : vérifiez la copie.' };
+    return { errorKey: 'licence.err.unreadable' };
   }
 }
 
@@ -71,14 +71,12 @@ function publicKey(): Promise<CryptoKey> {
   return publicKeyPromise;
 }
 
-export async function verifyKey(raw: string): Promise<{ ok: true; payload: LicensePayload } | { ok: false; reason: string }> {
+export async function verifyKey(raw: string): Promise<{ ok: true; payload: LicensePayload } | { ok: false; reasonKey: string }> {
   const parsed = parseKey(raw);
-  if ('error' in parsed) return { ok: false, reason: parsed.error };
-  if (!globalThis.crypto?.subtle) return { ok: false, reason: 'Vérification impossible : la page doit être servie en HTTPS (ou localhost).' };
+  if ('errorKey' in parsed) return { ok: false, reasonKey: parsed.errorKey };
+  if (!globalThis.crypto?.subtle) return { ok: false, reasonKey: 'licence.err.insecure' };
   const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, await publicKey(), parsed.sig, parsed.data);
-  return ok
-    ? { ok: true, payload: parsed.payload }
-    : { ok: false, reason: 'Signature invalide : cette clé n’a pas été émise pour AFE ou a été altérée.' };
+  return ok ? { ok: true, payload: parsed.payload } : { ok: false, reasonKey: 'licence.err.signature' };
 }
 
 /** Statut d'une licence dont la signature est déjà vérifiée. */
@@ -96,11 +94,7 @@ export function trialStatus(trialStart: string, today = todayISO()): LicenseStat
 }
 
 /** Cible du bouton d'achat : page de vente si configurée, sinon e-mail pré-rempli au vendeur. */
-export function purchaseTarget(info?: { name?: string; email?: string }): { label: string; url: string } {
-  if (PURCHASE_URL) return { label: 'Acheter une licence', url: PURCHASE_URL };
-  const subject = encodeURIComponent('Achat d’une licence AFE');
-  const body = encodeURIComponent(
-    `Bonjour,\n\nJe souhaite acheter une licence AFE.\n\nNom : ${info?.name ?? ''}\nE-mail : ${info?.email ?? ''}\nVersion de l'application : ${__APP_VERSION__}\n\nMerci.`,
-  );
-  return { label: 'Demander une licence', url: `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${body}` };
+export function purchaseTarget(info: { name?: string; email?: string; subject: string; body: string }): { labelKey: string; url: string } {
+  if (PURCHASE_URL) return { labelKey: 'licence.buy', url: PURCHASE_URL };
+  return { labelKey: 'licence.request', url: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(info.subject)}&body=${encodeURIComponent(info.body)}` };
 }

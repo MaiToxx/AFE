@@ -3,14 +3,16 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import BuyLicenceButton from '../components/BuyLicenceButton';
 import { BarChart, Meter, StatTile } from '../components/charts';
 import { Badge, Icon, Notice, PageHeader, Seg } from '../components/ui';
-import { useBaremes, useClients, useDocuments, useLicense, usePaiements, useProfile } from '../db/hooks';
-import { ACTIVITES, isTVAVente, isVente, type ActivityKind, type Doc } from '../db/types';
-import { pickBareme } from '../lib/bareme';
+import { useClients, useDocuments, useLicense, usePaiements, useProfile, useRegime, useRegimeOverrides } from '../db/hooks';
+import type { Doc } from '../db/types';
+import { colon, useI18n } from '../i18n';
 import { monthOf, parseISO, todayISO, yearOf } from '../lib/dates';
-import { montantPaye, statutInfo } from '../lib/documents';
 import { loadDemo } from '../lib/demo';
-import { MOIS_COURT, fmtCompact, fmtDate, fmtEUR, fmtEUR0 } from '../lib/format';
+import { montantDu, montantPaye, statutInfo } from '../lib/documents';
+import { fmtCompact, fmtDate, fmtMoney, fmtMoney0, moisCourts } from '../lib/format';
 import { caHT, caParActivite, declarations, encaissementsParMois, factureParMois, sum } from '../lib/stats';
+import { L } from '../regimes';
+import { activiteOf, paramsFor, seuilsApplicables } from '../regimes/engine';
 
 // Lien de démonstration : `#/?demo=1` charge le jeu de démo sur une base vide (une seule fois).
 let demoRequested = false;
@@ -18,24 +20,26 @@ let demoRequested = false;
 export default function Dashboard() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const { profile, loaded, exists } = useProfile();
+  const { t, tn, lang, locale } = useI18n();
+  const { profile, loaded } = useProfile();
+  const regime = useRegime();
+  const overrides = useRegimeOverrides(profile.pays);
   const docs = useDocuments();
   const paiements = usePaiements();
-  const baremes = useBaremes();
   const clients = useClients();
   const licence = useLicense();
-
-  useEffect(() => {
-    if (params.get('demo') === '1' && loaded && !exists && docs.length === 0 && !demoRequested) {
-      demoRequested = true;
-      void loadDemo();
-    }
-  }, [params, loaded, exists, docs.length]);
   const today = todayISO();
   const curY = yearOf(today);
   const curM = monthOf(today);
   const [year, setYear] = useState(curY);
   const [mode, setMode] = useState<'encaisse' | 'facture'>('encaisse');
+
+  useEffect(() => {
+    if (params.get('demo') === '1' && loaded && docs.length === 0 && !demoRequested) {
+      demoRequested = true;
+      void loadDemo();
+    }
+  }, [params, loaded, docs.length]);
 
   const years = useMemo(() => {
     const s = new Set<number>([curY]);
@@ -53,24 +57,20 @@ export default function Dashboard() {
   const prevToDate = sum(prev.slice(0, upto));
   const delta = prevToDate > 0 ? ((sum(cur.slice(0, upto)) - prevToDate) / prevToDate) * 100 : null;
 
-  const rows = useMemo(() => declarations(year, paiements, docsById, profile, baremes, today), [year, paiements, docsById, profile, baremes, today]);
-  const cotisAnnee = rows.reduce((s, r) => s + r.calcul.total, 0);
+  const rows = useMemo(() => declarations(year, paiements, docsById, profile, regime, overrides, today), [year, paiements, docsById, profile, regime, overrides, today]);
+  const prelevements = rows.reduce((s, r) => s + r.calcul.total, 0);
   const next = rows.find((r) => r.etat === 'a_declarer') ?? rows.find((r) => r.etat === 'en_cours');
 
   const factures = docs.filter((d) => d.type === 'facture');
   const attente = factures.filter((d) => d.statut === 'envoyee');
-  const attenteTotal = attente.reduce((s, d) => s + d.totalTTC - montantPaye(d, paiements), 0);
+  const attenteTotal = attente.reduce((s, d) => s + montantDu(d) - montantPaye(d, paiements), 0);
   const retard = attente.filter((d) => d.dateEcheance < today);
   const devisEnCours = docs.filter((d) => d.type === 'devis' && d.statut === 'envoye');
 
-  const bareme = pickBareme(baremes, year);
+  const { params: regimeParams } = paramsFor(regime, overrides, year);
   const parActivite = caParActivite(paiements, docsById, year);
-  const caVente = sum((Object.keys(parActivite) as ActivityKind[]).filter(isVente).map((a) => parActivite[a] ?? 0));
-  const caServices = sum((Object.keys(parActivite) as ActivityKind[]).filter((a) => !isVente(a)).map((a) => parActivite[a] ?? 0));
-  const caTVAVente = sum((Object.keys(parActivite) as ActivityKind[]).filter(isTVAVente).map((a) => parActivite[a] ?? 0));
-  const caTVAServices = sum((Object.keys(parActivite) as ActivityKind[]).filter((a) => !isTVAVente(a)).map((a) => parActivite[a] ?? 0));
-  const mainVente = isVente(profile.activite);
-  const mainTVAVente = isTVAVente(profile.activite);
+  const caTotal = sum(Object.values(parActivite));
+  const seuils = seuilsApplicables(regime, regimeParams, profile, parActivite).filter((s) => s.seuil.valeur > 0);
 
   const recentes = [...factures]
     .filter((d) => d.statut !== 'brouillon')
@@ -111,38 +111,39 @@ export default function Dashboard() {
       }
     }
     const arr = [...map.entries()]
-      .map(([cid, ca]) => ({ nom: cid ? clients.find((c) => c.id === cid)?.nom ?? 'Client supprimé' : 'Sans client', ca }))
+      .map(([cid, ca]) => ({ nom: cid ? clients.find((c) => c.id === cid)?.nom ?? t('dash.deletedClient') : t('dash.noClient'), ca }))
       .filter((x) => x.ca > 0)
       .sort((a, b) => b.ca - a.ca);
     const top = arr.slice(0, 5);
-    if (arr.length > 5) top.push({ nom: `Autres (${arr.length - 5})`, ca: arr.slice(5).reduce((s, x) => s + x.ca, 0) });
+    if (arr.length > 5) top.push({ nom: t('dash.others', { n: arr.length - 5 }), ca: arr.slice(5).reduce((s, x) => s + x.ca, 0) });
     return top;
-  }, [mode, paiements, docs, docsById, clients, year]);
+  }, [mode, paiements, docs, docsById, clients, year, t]);
+
+  const blocked = licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid';
 
   return (
     <>
       <PageHeader
-        title="Tableau de bord"
-        subtitle={profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || 'Votre activité en un coup d’œil'}
+        title={t('dash.title')}
+        subtitle={profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || t('dash.subtitleDefault')}
         actions={
           <>
             <button type="button" className="btn" onClick={() => navigate('/documents/nouveau?type=devis')}>
-              <Icon name="plus" /> Devis
+              <Icon name="plus" /> {t('doc.quote')}
             </button>
             <button type="button" className="btn primary" onClick={() => navigate('/documents/nouveau?type=facture')}>
-              <Icon name="plus" /> Facture
+              <Icon name="plus" /> {t('doc.invoice')}
             </button>
           </>
         }
       />
 
-      {(licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid') && (
+      {blocked && (
         <div style={{ marginBottom: 18 }}>
           <Notice tone="critical">
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               <span>
-                {licence.status === 'trial_over' ? "Période d'essai terminée." : 'Licence expirée ou invalide.'} Vos données restent accessibles, mais la finalisation de nouveaux devis et factures est désactivée.{' '}
-                <Link to="/parametres?tab=licence">Activer une licence</Link>
+                {licence.status === 'trial_over' ? t('licence.trialOverNotice') : t('licence.invalidNotice')} <Link to="/parametres?tab=licence">{t('licence.activateLink')}</Link>
               </span>
               <BuyLicenceButton small />
             </div>
@@ -153,40 +154,35 @@ export default function Dashboard() {
       {recDrafts.length > 0 && (
         <div style={{ marginBottom: 18 }}>
           <Notice>
-            {recDrafts.length} facture{recDrafts.length > 1 ? 's' : ''} récurrente{recDrafts.length > 1 ? 's' : ''} générée{recDrafts.length > 1 ? 's' : ''} en brouillon :{' '}
-            <Link to="/documents?type=facture">à vérifier et finaliser</Link>.
+            {tn('dash.recurrenceDrafts', recDrafts.length)} <Link to="/documents?type=facture">{t('dash.recurrenceDraftsLink')}</Link>
           </Notice>
         </div>
       )}
 
       {vide && (
         <div className="card" style={{ marginBottom: 18 }}>
-          <h2>Bienvenue 👋</h2>
-          <p className="text-2" style={{ margin: '6px 0 14px' }}>
-            Tout se passe sur cet appareil, sans compte ni connexion. Trois étapes pour démarrer :
-          </p>
+          <h2>{t('dash.welcome')}</h2>
+          <p className="text-2" style={{ margin: '6px 0 14px' }}>{t('dash.welcomeText')}</p>
           <div className="actions">
-            {!exists && (
-              <Link to="/parametres" className="btn primary">
-                <Icon name="settings" /> 1. Renseigner mon profil
-              </Link>
-            )}
+            <Link to="/parametres" className="btn primary">
+              <Icon name="settings" /> {t('dash.step1')}
+            </Link>
             <Link to="/clients" className="btn">
-              <Icon name="users" /> 2. Ajouter un client
+              <Icon name="users" /> {t('dash.step2')}
             </Link>
             <Link to="/documents/nouveau?type=facture" className="btn">
-              <Icon name="file" /> 3. Créer une facture
+              <Icon name="file" /> {t('dash.step3')}
             </Link>
             <span className="spacer" style={{ flex: 1 }} />
             <button type="button" className="btn ghost" onClick={() => void loadDemo()}>
-              <Icon name="eye" /> Voir avec des données de démonstration
+              <Icon name="eye" /> {t('dash.loadDemo')}
             </button>
           </div>
         </div>
       )}
 
       <div className="filters">
-        <select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="Année">
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label={t('common.year')}>
           {years.map((y) => (
             <option key={y} value={y}>{y}</option>
           ))}
@@ -195,163 +191,134 @@ export default function Dashboard() {
           value={mode}
           onChange={setMode}
           options={[
-            { value: 'encaisse', label: 'Encaissé' },
-            { value: 'facture', label: 'Facturé' },
+            { value: 'encaisse', label: t('dash.received') },
+            { value: 'facture', label: t('dash.invoiced') },
           ]}
         />
-        <span className="small muted">{mode === 'encaisse' ? 'Chiffre d’affaires HT réellement encaissé (base des cotisations).' : 'Montants HT des factures émises, payées ou non.'}</span>
+        <span className="small muted">{mode === 'encaisse' ? t('dash.receivedHelp') : t('dash.invoicedHelp')}</span>
       </div>
 
       <div className="dash-top">
         <div className="card hero">
-          <span className="label muted">CA {mode === 'encaisse' ? 'encaissé' : 'facturé'} en {year}</span>
-          <span className="value">{fmtEUR0(total)}</span>
+          <span className="label muted">{mode === 'encaisse' ? t('dash.heroReceived', { year }) : t('dash.heroInvoiced', { year })}</span>
+          <span className="value">{fmtMoney0(total)}</span>
           <span className="delta">
             {delta === null ? (
-              <span className="muted">Pas de comparaison disponible avec {year - 1}</span>
+              <span className="muted">{t('dash.noComparison', { year: year - 1 })}</span>
             ) : (
               <>
                 <span className={delta >= 0 ? 'good' : 'critical'} style={{ fontWeight: 600 }}>
                   {delta >= 0 ? '▲' : '▼'} {Math.abs(Math.round(delta))} %
                 </span>
-                <span>vs {year - 1}{year === curY ? ' à la même date' : ''} ({fmtCompact(prevToDate)})</span>
+                <span>{t(year === curY ? 'dash.vsToDate' : 'dash.vs', { year: year - 1, montant: fmtCompact(prevToDate) })}</span>
               </>
             )}
           </span>
         </div>
-          <StatTile
-            label={`Cotisations ${year}`}
-            value={fmtCompact(cotisAnnee)}
-            sub={<Link to="/cotisations">estimation URSSAF →</Link>}
-          />
-          <StatTile
-            label="Prochaine déclaration"
-            value={next ? fmtCompact(next.calcul.total) : '—'}
-            sub={
-              next ? (
-                <>
-                  {next.etat === 'a_declarer' ? <Badge tone="warning">avant le {fmtDate(next.period.echeance)}</Badge> : <span>{next.period.label} · échéance {fmtDate(next.period.echeance)}</span>}
-                </>
-              ) : (
-                'Aucune période'
-              )
-            }
-          />
-          <StatTile
-            label="En attente de paiement"
-            value={fmtCompact(attenteTotal)}
-            sub={
-              attente.length ? (
-                <>
-                  {attente.length} facture{attente.length > 1 ? 's' : ''}
-                  {retard.length > 0 && <Badge tone="critical">{retard.length} en retard</Badge>}
-                </>
-              ) : (
-                'Tout est encaissé'
-              )
-            }
-          />
-          <StatTile
-            label="Devis en cours"
-            value={fmtCompact(devisEnCours.reduce((s, d) => s + d.totalTTC, 0))}
-            sub={devisEnCours.length ? `${devisEnCours.length} devis envoyé${devisEnCours.length > 1 ? 's' : ''}` : 'Aucun devis en attente'}
-          />
+        <StatTile label={t('dash.tileContrib', { year })} value={fmtCompact(prelevements)} sub={<Link to="/cotisations">{t('dash.tileContribLink')}</Link>} />
+        <StatTile
+          label={t('dash.tileNext')}
+          value={next ? fmtCompact(next.calcul.total) : '—'}
+          sub={
+            next ? (
+              next.etat === 'a_declarer' ? <Badge tone="warning">{t('dash.before', { date: fmtDate(next.period.echeance) })}</Badge> : <span>{next.period.label} · {t('dash.due', { date: fmtDate(next.period.echeance) })}</span>
+            ) : (
+              t('dash.noPeriod')
+            )
+          }
+        />
+        <StatTile
+          label={t('dash.tileAwaiting')}
+          value={fmtCompact(attenteTotal)}
+          sub={
+            attente.length ? (
+              <>
+                {tn('dash.invoicesCount', attente.length)}
+                {retard.length > 0 && <Badge tone="critical">{tn('dash.lateCount', retard.length)}</Badge>}
+              </>
+            ) : (
+              t('dash.allPaid')
+            )
+          }
+        />
+        <StatTile
+          label={t('dash.tileQuotes')}
+          value={fmtCompact(devisEnCours.reduce((s, d) => s + d.totalTTC, 0))}
+          sub={devisEnCours.length ? tn('dash.quotesCount', devisEnCours.length) : t('dash.noQuotes')}
+        />
       </div>
 
       <div className="dash-main">
         <div className="stack">
-        <div className="card">
-          <div className="card-head">
-            <h2>Chiffre d'affaires mensuel</h2>
-            <span className="small muted">HT · {mode === 'encaisse' ? 'par date d’encaissement' : 'par date de facture'}</span>
-          </div>
-          <BarChart
-            categories={MOIS_COURT}
-            series={chartSeries}
-            format={fmtEUR}
-            formatTick={(n) => fmtCompact(n).replace(/\s€$/, ' €')}
-            highlightIndex={year === curY ? curM - 1 : undefined}
-            ariaLabel={`Chiffre d'affaires mensuel ${year}`}
-            categoryLabel="Mois"
-          />
-        </div>
-        <div className="card">
-          <div className="card-head">
-            <h2>Top clients {year}</h2>
-            <span className="small muted">part du CA {mode === 'encaisse' ? 'encaissé' : 'facturé'} HT</span>
-          </div>
-          {topClients.length === 0 ? (
-            <p className="small text-2">Aucune donnée sur cette période.</p>
-          ) : (
-            <div className="barlist">
-              {topClients.map((c) => (
-                <div key={c.nom} className="barlist-row">
-                  <span className="barlist-name" title={c.nom}>{c.nom}</span>
-                  <span className="barlist-bar" aria-hidden="true"><i style={{ width: `${(c.ca / topClients[0].ca) * 100}%` }} /></span>
-                  <span className="barlist-val">{fmtEUR0(c.ca)} <span className="muted">· {total > 0 ? Math.round((c.ca / total) * 100) : 0} %</span></span>
-                </div>
-              ))}
+          <div className="card">
+            <div className="card-head">
+              <h2>{t('dash.chartTitle')}</h2>
+              <span className="small muted">{mode === 'encaisse' ? t('dash.chartByReceipt') : t('dash.chartByInvoice')}</span>
             </div>
-          )}
-        </div>
+            <BarChart
+              categories={moisCourts(locale)}
+              series={chartSeries}
+              format={fmtMoney}
+              formatTick={fmtCompact}
+              highlightIndex={year === curY ? curM - 1 : undefined}
+              ariaLabel={t('dash.chartTitle')}
+              categoryLabel={t('common.month')}
+            />
+          </div>
+          <div className="card">
+            <div className="card-head">
+              <h2>{t('dash.topClients', { year })}</h2>
+              <span className="small muted">{mode === 'encaisse' ? t('dash.topReceived') : t('dash.topInvoiced')}</span>
+            </div>
+            {topClients.length === 0 ? (
+              <p className="small text-2">{t('chart.noData')}</p>
+            ) : (
+              <div className="barlist">
+                {topClients.map((c) => (
+                  <div key={c.nom} className="barlist-row">
+                    <span className="barlist-name" title={c.nom}>{c.nom}</span>
+                    <span className="barlist-bar" aria-hidden="true"><i style={{ width: `${(c.ca / topClients[0].ca) * 100}%` }} /></span>
+                    <span className="barlist-val">{fmtMoney0(c.ca)} <span className="muted">· {total > 0 ? Math.round((c.ca / total) * 100) : 0} %</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="stack">
           <div className="card">
             <div className="card-head">
-              <h2>{profile.objectifCA > 0 ? 'Objectif et seuils' : 'Seuils'} {year}</h2>
-              <span className="small muted">sur le CA encaissé</span>
+              <h2>{profile.objectifCA > 0 ? t('dash.goalAndThresholds', { year }) : t('dash.thresholds', { year })}</h2>
+              <span className="small muted">{t('dash.onReceived')}</span>
             </div>
             <div className="stack" style={{ gap: 18 }}>
               {profile.objectifCA > 0 && (
-                <Meter
-                  goal
-                  label={`Objectif de CA ${year}`}
-                  value={caVente + caServices}
-                  max={profile.objectifCA}
-                  format={fmtEUR0}
-                  note={projection && mode === 'encaisse' ? `Projection fin d'année : ${fmtEUR0(projection)}` : undefined}
-                />
+                <Meter goal label={t('dash.goal', { year })} value={caTotal} max={profile.objectifCA} format={fmtMoney0} note={projection && mode === 'encaisse' ? t('dash.projection', { montant: fmtMoney0(projection) }) : undefined} />
               )}
-              {caVente > 0 && caServices > 0 ? (
-                <>
-                  <Meter label="Plafond micro — global" value={caVente + caServices} max={bareme.plafondCA.vente} format={fmtEUR0} />
-                  <Meter label="Plafond micro — services" value={caServices} max={bareme.plafondCA.services} format={fmtEUR0} />
-                </>
-              ) : (
+              {seuils.map(({ seuil, valeur }) => (
                 <Meter
-                  label={`Plafond micro-entreprise (${mainVente || caVente > 0 ? 'vente' : 'services'})`}
-                  value={caVente > 0 ? caVente : caServices}
-                  max={mainVente || caVente > 0 ? bareme.plafondCA.vente : bareme.plafondCA.services}
-                  format={fmtEUR0}
+                  key={seuil.id}
+                  label={L(seuil.label, lang)}
+                  value={valeur}
+                  max={seuil.valeur}
+                  format={fmtMoney0}
+                  marker={seuil.majore ? { value: seuil.majore, label: t('dash.majore', { montant: fmtMoney0(seuil.majore) }) } : undefined}
+                  note={seuil.majore ? t('dash.majore', { montant: fmtMoney0(seuil.majore) }) : L(seuil.note, lang) || undefined}
                 />
-              )}
-              {profile.assujettiTVA ? (
-                <p className="small muted">Vous êtes assujetti à la TVA : le seuil de franchise ne s'applique pas.</p>
-              ) : caTVAVente > 0 && caTVAServices > 0 ? (
-                <>
-                  <Meter label="Franchise TVA — global" value={caTVAVente + caTVAServices} max={bareme.franchiseTVA.venteBase} format={fmtEUR0} marker={{ value: bareme.franchiseTVA.venteMajore, label: 'Seuil majoré' }} />
-                  <Meter label="Franchise TVA — services" value={caTVAServices} max={bareme.franchiseTVA.servicesBase} format={fmtEUR0} />
-                </>
-              ) : (
-                <Meter
-                  label={`Franchise de TVA (${mainTVAVente || caTVAVente > 0 ? 'vente / hébergement' : 'services'})`}
-                  value={caTVAVente > 0 ? caTVAVente : caTVAServices}
-                  max={mainTVAVente || caTVAVente > 0 ? bareme.franchiseTVA.venteBase : bareme.franchiseTVA.servicesBase}
-                  format={fmtEUR0}
-                  note={`Seuil majoré : ${fmtEUR0(mainTVAVente || caTVAVente > 0 ? bareme.franchiseTVA.venteMajore : bareme.franchiseTVA.servicesMajore)}`}
-                />
-              )}
+              ))}
+              {profile.assujettiTVA && regime.tva.franchisePossible && <p className="small muted">{t('dash.vatRegistered', { tva: regime.tva.nom })}</p>}
+              {seuils.length === 0 && profile.objectifCA <= 0 && <p className="small muted">{t('dash.noThreshold')}</p>}
             </div>
           </div>
 
           <div className="card">
             <div className="card-head">
-              <h2>Dernières factures</h2>
-              <Link to="/documents" className="small">Tout voir</Link>
+              <h2>{t('dash.recentInvoices')}</h2>
+              <Link to="/documents" className="small">{t('common.seeAll')}</Link>
             </div>
             {recentes.length === 0 ? (
-              <p className="small text-2">Aucune facture finalisée pour l'instant.</p>
+              <p className="small text-2">{t('dash.noInvoiceYet')}</p>
             ) : (
               <table className="table">
                 <tbody>
@@ -361,8 +328,8 @@ export default function Dashboard() {
                       <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
                         <td className="tnum small"><b>{d.numero}</b></td>
                         <td className="small">{clientName(d)}</td>
-                        <td className="num small">{fmtEUR(d.totalTTC)}</td>
-                        <td><Badge tone={st.tone}>{st.label}</Badge></td>
+                        <td className="num small">{fmtMoney(d.totalTTC)}</td>
+                        <td><Badge tone={st.tone}>{t(st.key)}</Badge></td>
                       </tr>
                     );
                   })}
@@ -375,7 +342,7 @@ export default function Dashboard() {
 
       {Object.keys(parActivite).length > 1 && (
         <p className="small muted" style={{ marginTop: 14 }}>
-          Répartition {year} : {(Object.entries(parActivite) as [ActivityKind, number][]).map(([a, v]) => `${ACTIVITES.find((x) => x.value === a)?.court} ${fmtEUR0(v)}`).join(' · ')}
+          {t('dash.split', { year })}{colon(lang)}{Object.entries(parActivite).map(([a, v]) => `${L(activiteOf(regime, a).court, lang)} ${fmtMoney0(v)}`).join(' · ')}
         </p>
       )}
     </>
