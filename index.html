@@ -14,6 +14,8 @@
       try {
         var t = localStorage.getItem('afe-theme');
         if (t) document.documentElement.dataset.theme = t;
+        var z = localStorage.getItem('afe-taille');
+        if (z) document.documentElement.dataset.taille = z;
       } catch (e) {}
     </script>
   </head>

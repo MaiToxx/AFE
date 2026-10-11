@@ -30,6 +30,12 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 6px 16px rgba(0, 0, 0, 0.05);
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --nav-w: 232px;
+  --zoom: 1;
+}
+@media screen {
+  :root[data-taille="compact"] { --zoom: 0.9; }
+  :root[data-taille="grand"] { --zoom: 1.1; }
+  :root[data-taille="tres-grand"] { --zoom: 1.25; }
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -116,9 +122,10 @@ button { cursor: pointer; }
 .critical { color: var(--critical-text); }
 
 /* ---------- Structure ---------- */
-.app { display: grid; grid-template-columns: var(--nav-w) 1fr; min-height: 100vh; }
+/* Taille d'affichage : tout l'écran est agrandi ou réduit ; les hauteurs « plein écran » sont compensées. */
+.app { display: grid; grid-template-columns: var(--nav-w) 1fr; min-height: calc(100vh / var(--zoom)); zoom: var(--zoom); }
 .nav {
-  position: sticky; top: 0; height: 100vh;
+  position: sticky; top: 0; height: calc(100vh / var(--zoom));
   display: flex; flex-direction: column; gap: 4px;
   padding: 18px 12px;
   background: var(--surface);
@@ -356,7 +363,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 dialog.modal {
   border: 1px solid var(--border); border-radius: 12px; padding: 0;
   background: var(--surface); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+  width: min(560px, calc((100vw - 32px) / var(--zoom))); max-height: calc((100vh - 48px) / var(--zoom));
 }
 dialog.modal.wide { width: min(760px, calc(100vw - 32px)); }
 dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }

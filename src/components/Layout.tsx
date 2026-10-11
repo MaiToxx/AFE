@@ -40,6 +40,41 @@ export function useTheme(): [Theme, (t: Theme) => void] {
   return [t, applyTheme];
 }
 
+export type Taille = 'compact' | 'normal' | 'grand' | 'tres-grand';
+const TAILLES: readonly Taille[] = ['compact', 'normal', 'grand', 'tres-grand'];
+
+export function getTaille(): Taille {
+  try {
+    const z = localStorage.getItem('afe-taille') as Taille | null;
+    return z && TAILLES.includes(z) ? z : 'normal';
+  } catch {
+    return 'normal';
+  }
+}
+
+export function applyTaille(z: Taille) {
+  try {
+    if (z === 'normal') localStorage.removeItem('afe-taille');
+    else localStorage.setItem('afe-taille', z);
+  } catch {
+    /* stockage indisponible : la taille ne sera pas mémorisée */
+  }
+  if (z === 'normal') delete document.documentElement.dataset.taille;
+  else document.documentElement.dataset.taille = z;
+  window.dispatchEvent(new Event('afe-taille'));
+}
+
+/** Taille d'affichage de l'application (les documents imprimés ne sont pas concernés). */
+export function useTaille(): [Taille, (z: Taille) => void] {
+  const [z, setZ] = useState<Taille>(getTaille);
+  useEffect(() => {
+    const h = () => setZ(getTaille());
+    window.addEventListener('afe-taille', h);
+    return () => window.removeEventListener('afe-taille', h);
+  }, []);
+  return [z, applyTaille];
+}
+
 export function isDark(t: Theme): boolean {
   return t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 }

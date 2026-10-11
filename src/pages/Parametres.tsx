@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import BaremeEditor from '../components/BaremeEditor';
 import BuyLicenceButton from '../components/BuyLicenceButton';
-import { useTheme, type Theme } from '../components/Layout';
+import { useTaille, useTheme, type Taille, type Theme } from '../components/Layout';
 import PrestationForm from '../components/PrestationForm';
 import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
 import { clearAll, db, deleteSetting, exportBackup, getSetting, importBackup, saveProfile, setSetting } from '../db/db';
@@ -801,6 +801,7 @@ function MiseAJourButton() {
 function ApparenceTab() {
   const { t, lang, setLang } = useI18n();
   const [theme, setTheme] = useTheme();
+  const [taille, setTaille] = useTaille();
   return (
     <div className="card">
       <div className="form-section">
@@ -822,6 +823,20 @@ function ApparenceTab() {
             { value: 'auto', label: t('settings.themeAuto') },
             { value: 'light', label: t('settings.themeLight') },
             { value: 'dark', label: t('settings.themeDark') },
+          ]}
+        />
+      </div>
+      <div className="form-section">
+        <h3>{t('settings.displaySize')}</h3>
+        <p className="small text-2" style={{ margin: '4px 0 12px' }}>{t('settings.displaySizeHelp')}</p>
+        <Seg<Taille>
+          value={taille}
+          onChange={setTaille}
+          options={[
+            { value: 'compact', label: t('settings.sizeCompact') },
+            { value: 'normal', label: t('settings.sizeNormal') },
+            { value: 'grand', label: t('settings.sizeLarge') },
+            { value: 'tres-grand', label: t('settings.sizeXLarge') },
           ]}
         />
       </div>
