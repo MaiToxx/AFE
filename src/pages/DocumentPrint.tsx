@@ -1,13 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useRef } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import QrCode from '../components/QrCode';
 import { Icon } from '../components/ui';
 import { db } from '../db/db';
 import { useClients, usePaiements, useProfile, useRegime } from '../db/hooks';
 import type { ClientSnapshot } from '../db/types';
 import { tIn, useI18n, type Lang } from '../i18n';
 import { ligneTotalHT, montantPaye, montantRemise, normalizeDoc, profilDuDocument, sousTotal, ventilationTaxe } from '../lib/documents';
-import { fmtDate, fmtMoneyIn, fmtNum } from '../lib/format';
+import { fmtDate, fmtMoneyIn, fmtNum, round2 } from '../lib/format';
+import { epcPayload } from '../lib/sepa';
 import { L, getRegime, identifiantPrincipal, identifiantsPied, localeFor } from '../regimes';
 import { groupeOf } from '../regimes/engine';
 
@@ -75,6 +77,17 @@ export default function DocumentPrint() {
   const parTaux = profile.assujettiTVA ? ventilationTaxe(doc) : [];
   const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || tl('print.yourName');
   const proClient = client?.type === 'pro';
+  // QR code de virement SEPA : facture en euros restant à régler, IBAN valide, option activée.
+  const qr =
+    isFacture && profile.qrPaiement && devise === 'EUR' && doc.statut !== 'annulee' && doc.statut !== 'payee'
+      ? epcPayload({
+          nom: profile.denomination || `${profile.prenom} ${profile.nom}`.trim(),
+          iban: profile.iban,
+          bic: profile.bic,
+          montant: round2(doc.netAPayer - paye),
+          reference: `${titre} ${doc.numero}`.trim(),
+        })
+      : null;
   const periode = doc.prestationDebut
     ? doc.prestationFin && doc.prestationFin !== doc.prestationDebut
       ? tl('print.period', { from: date(doc.prestationDebut), to: date(doc.prestationFin) })
@@ -253,17 +266,25 @@ export default function DocumentPrint() {
             </div>
           )}
           {isFacture && (
-            <div>
-              <h4>{tl('print.paymentTerms')}</h4>
-              <div>{profile.conditionsPaiement || tl('print.defaultTerms', { date: date(doc.dateEcheance) })}</div>
-              {(profile.iban || profile.bic) && (
-                <div>
-                  {profile.iban && <>IBAN{c}{profile.iban}</>}
-                  {profile.iban && profile.bic && ' · '}
-                  {profile.bic && <>BIC{c}{profile.bic}</>}
+            <div className={qr ? 'paiement' : undefined}>
+              <div>
+                <h4>{tl('print.paymentTerms')}</h4>
+                <div>{profile.conditionsPaiement || tl('print.defaultTerms', { date: date(doc.dateEcheance) })}</div>
+                {(profile.iban || profile.bic) && (
+                  <div>
+                    {profile.iban && <>IBAN{c}{profile.iban}</>}
+                    {profile.iban && profile.bic && ' · '}
+                    {profile.bic && <>BIC{c}{profile.bic}</>}
+                  </div>
+                )}
+                {proClient && mentionRetard && <div>{mentionRetard}</div>}
+              </div>
+              {qr && (
+                <div className="qr">
+                  <QrCode value={qr} label={tl('print.qrCaption')} />
+                  <div>{tl('print.qrCaption')}</div>
                 </div>
               )}
-              {proClient && mentionRetard && <div>{mentionRetard}</div>}
             </div>
           )}
           {doc.type === 'devis' && (

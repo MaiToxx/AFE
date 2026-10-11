@@ -18,6 +18,7 @@ import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
 import { fmtDate, fmtMoney } from '../lib/format';
 import { PURCHASE_URL, SUPPORT_EMAIL, TRIAL_DAYS, evaluate, verifyKey, type LicenseStatus } from '../lib/license';
 import { sauvegarderCleFichier, supprimerCleFichier } from '../lib/licenseStore';
+import { ibanValide } from '../lib/sepa';
 import { REVOCATION_GRACE_DAYS, SETTING_REVOCATIONS, SETTING_REVOCATIONS_CHECKED } from '../lib/revocations';
 import { refreshRevocations, revocationView } from '../lib/revocationsStore';
 import { verifierMiseAJour } from '../lib/updater';
@@ -414,9 +415,12 @@ function FacturationTab({ form, set, regime }: { form: Profile; set: (p: Partial
         <h3>{t('settings.mentions')}</h3>
         <Field label={t('settings.paymentTerms')}><input type="text" value={form.conditionsPaiement} onChange={(e) => set({ conditionsPaiement: e.target.value })} placeholder={t('settings.paymentTermsPlaceholder')} /></Field>
         <div className="form-row">
-          <Field label="IBAN"><input type="text" value={form.iban} onChange={(e) => set({ iban: e.target.value })} /></Field>
+          <Field label="IBAN" help={form.iban.trim() && !ibanValide(form.iban) ? <span className="critical">{t('settings.ibanInvalid')}</span> : undefined}>
+            <input type="text" value={form.iban} onChange={(e) => set({ iban: e.target.value })} />
+          </Field>
           <Field label="BIC"><input type="text" value={form.bic} onChange={(e) => set({ bic: e.target.value })} /></Field>
         </div>
+        <Check label={t('settings.qrPayment')} help={t('settings.qrPaymentHelp')} checked={form.qrPaiement} onChange={(qrPaiement) => set({ qrPaiement })} />
         <Field label={t('settings.footerMentions')} help={t('settings.footerMentionsHelp')}>
           <textarea value={form.mentionsPied} onChange={(e) => set({ mentionsPied: e.target.value })} rows={3} />
         </Field>

@@ -417,6 +417,10 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
 .sheet-dark .totals-block tr.detail td { color: #a5a59f; }
 .sheet .totals-block tr.grand td { font-weight: 700; font-size: 12.5pt; border-top: 2px solid var(--doc-accent); padding-top: 8px; }
 .sheet .mentions { font-size: 8.8pt; color: #333; display: grid; gap: 7px; }
+.sheet .mentions .paiement { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; }
+.sheet .mentions .qr { flex: none; width: 112px; text-align: center; font-size: 7pt; line-height: 1.25; color: #555; }
+.sheet .mentions .qr svg { display: block; margin-bottom: 3px; }
+.sheet-dark .mentions .qr { color: #a5a59f; }
 .sheet .mentions h4 { font-size: 9pt; color: #111; margin-bottom: 1px; }
 .sheet-foot { margin-top: auto; padding-top: 12px; border-top: 1px solid #ddd; font-size: 8pt; color: #666; text-align: center; }
 .sheet .meta { font-size: 9.5pt; color: #333; }
