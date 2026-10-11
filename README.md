@@ -54,8 +54,22 @@ Windows). Aucune inscription, aucun serveur : toutes les données vivent sur l'a
 - **Livre des recettes** : registre chronologique des encaissements, export CSV, impression.
 - **Productivité** : catalogue de prestations, relances d'impayés (e-mail pré-rempli dans la langue
   du document + historique), factures récurrentes générées automatiquement.
+- **Numérotation au choix** : avec ou sans année, nombre de chiffres, numéro de départ par type de
+  document (reprise d'une numérotation existante) ; un numéro attribué n'est jamais réutilisé.
+- **Remise en montant ou en pourcentage**, détail de la taxe par taux quand un document en mélange
+  plusieurs.
+- **QR code de virement SEPA** sur les factures en euros : le client scanne, son application
+  bancaire est pré-remplie (bénéficiaire, IBAN, montant restant dû, référence).
+- **Conditions générales** : texte libre joint en page annexe aux devis et/ou aux factures ; un
+  document émis conserve les conditions en vigueur le jour de son émission.
+- **Échéancier** : déclarations, factures à encaisser, devis en fin de validité et factures
+  récurrentes classés par date, retards par
+  ancienneté (0-30, 31-60, 61-90, plus de 90 jours), export vers un agenda (`.ics`).
+- **Clients** : import et export CSV, langue des documents et délai de paiement propres à chaque
+  client. Export CSV des documents.
+- **Recherche globale** (`Ctrl+K`) : numéro, client, objet, page ou action, entièrement au clavier.
 - **Sauvegarde / restauration** JSON, sauvegarde automatique (version bureau, toutes les 10 min),
-  données de démonstration, thème clair/sombre.
+  données de démonstration, thème clair/sombre, taille d'affichage réglable.
 
 ## Démarrer
 
