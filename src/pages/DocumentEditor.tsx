@@ -14,12 +14,13 @@ import { LANGS, useI18n, type Lang } from '../i18n';
 import { addDays, isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
   acompteDepuisDevis, acomptesDuDevis, avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
-  ligneTotalHT, montantDu, montantPaye, montantRembourse, montantRemise, newDoc, newLigne, nextSeq, normalizeDoc, prefixeFor, rembourser,
+  ligneTotalHT, montantDu, montantPaye, montantRembourse, montantRemise, newDoc, newLigne, nextSeq, normalizeDoc, prefixeFor, profilDuDocument, rembourser,
   saveDoc, setStatut, sousTotal, statutInfo, supprimerDoc, supprimerPaiement,
 } from '../lib/documents';
 import { fmtDate, fmtMoney, fmtNum, round2 } from '../lib/format';
 import { canFinalize } from '../lib/license';
-import { supprimerRelance } from '../lib/relances';
+import { openExternal } from '../lib/desktop';
+import { envoiMailto, supprimerRelance } from '../lib/relances';
 import { useGuard } from '../lib/useGuard';
 import { L, identifiantPrincipal } from '../regimes';
 
@@ -371,6 +372,11 @@ export default function DocumentEditor() {
             {doc.id && (
               <button type="button" className="btn" onClick={() => navigate(`/documents/${doc.id}/imprimer`)}>
                 <Icon name="print" /> {t('editor.previewPdf')}
+              </button>
+            )}
+            {locked && doc.statut !== 'annulee' && (
+              <button type="button" className="btn" onClick={() => void openExternal(envoiMailto(doc, profilDuDocument(doc, profile)))} title={t('editor.sendMailTitle')}>
+                <Icon name="mail" /> {t('editor.sendMail')}
               </button>
             )}
             {!locked && (

@@ -27,9 +27,32 @@ export function relanceMailto(doc: Doc, profile: Profile, regime: Regime, reste:
   const retardMention = L(regime.mentions.retard, lang);
   if (doc.client?.type === 'pro' && retard > 0 && retardMention) lignes.push(tIn(lang, 'relance.penalties'), '');
   lignes.push(tIn(lang, 'relance.regards'), emetteur);
-  // L'adresse n'est reprise que si elle a la forme d'une adresse : tout autre contenu (venu par exemple
-  // d'une sauvegarde importée) pourrait ajouter des destinataires ou des champs au message.
-  const email = (doc.client?.email ?? '').trim();
+  return lienMail(doc.client?.email, subject, lignes);
+}
+
+/** E-mail d'envoi d'un document émis, pré-rempli dans la langue du document (le PDF reste à joindre). */
+export function envoiMailto(doc: Doc, profile: Profile): string {
+  const lang: Lang = doc.langue || profile.langueDocuments;
+  const locale = localeFor(lang, profile.pays);
+  const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim();
+  const titre = tIn(lang, doc.type === 'facture' && doc.acompte ? 'print.depositInvoice' : doc.type === 'facture' ? 'print.invoice' : doc.type === 'avoir' ? 'print.creditNote' : 'print.quote');
+  const v = {
+    numero: doc.numero,
+    date: fmtDate(doc.dateEmission, locale),
+    montant: fmtMoneyIn(locale, doc.devise || profile.devise, doc.type === 'facture' ? (doc.netAPayer ?? doc.totalTTC) : doc.totalTTC),
+    echeance: fmtDate(doc.dateEcheance, locale),
+  };
+  const corps = tIn(lang, doc.type === 'facture' ? 'doc.mailInvoice' : doc.type === 'avoir' ? 'doc.mailCredit' : 'doc.mailQuote', v);
+  const lignes = [tIn(lang, 'relance.hello'), '', corps, '', tIn(lang, 'doc.mailAvailable'), '', tIn(lang, 'relance.regards'), emetteur];
+  return lienMail(doc.client?.email, [titre, doc.numero, emetteur].filter(Boolean).join(' - '), lignes);
+}
+
+/**
+ * Lien mailto:. L'adresse n'est reprise que si elle a la forme d'une adresse : tout autre contenu (venu
+ * par exemple d'une sauvegarde importée) pourrait ajouter des destinataires ou des champs au message.
+ */
+function lienMail(adresse: string | undefined, subject: string, lignes: string[]): string {
+  const email = (adresse ?? '').trim();
   const to = /^[^\s@?&#%,;:<>"]+@[^\s@?&#%,;:<>"]+\.[^\s@?&#%,;:<>"]+$/.test(email) ? email : '';
   return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lignes.join('\n'))}`;
 }
