@@ -6,6 +6,7 @@ export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in
 const FORMATS: Record<string, { nom: string; mime: string }> = {
   json: { nom: 'JSON', mime: 'application/json' },
   csv: { nom: 'CSV', mime: 'text/csv;charset=utf-8' },
+  ics: { nom: 'iCalendar', mime: 'text/calendar;charset=utf-8' },
 };
 
 /** Format d'un fichier d'après son extension (JSON par défaut). */

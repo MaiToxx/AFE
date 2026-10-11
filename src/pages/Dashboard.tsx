@@ -3,12 +3,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import BuyLicenceButton from '../components/BuyLicenceButton';
 import { BarChart, Meter, StatTile } from '../components/charts';
 import { Badge, Icon, Notice, PageHeader, Seg } from '../components/ui';
-import { useClients, useDepenses, useDocuments, useLicense, usePaiements, useProfile, useRegime, useRegimeOverrides } from '../db/hooks';
+import { useClients, useDepenses, useDocuments, useLicense, usePaiements, useProfile, useRegime, useRegimeOverrides, useRelances } from '../db/hooks';
 import type { Doc } from '../db/types';
 import { colon, useI18n } from '../i18n';
 import { monthOf, parseISO, todayISO, yearOf } from '../lib/dates';
 import { loadDemo } from '../lib/demo';
 import { montantDu, statutInfo } from '../lib/documents';
+import { retardsParAnciennete } from '../lib/echeances';
 import { fmtCompact, fmtDate, fmtMoney, fmtMoney0, moisCourts } from '../lib/format';
 import { caHT, caParActivite, declarations, encaisseParFacture, encaissementsParMois, factureParMois, sum } from '../lib/stats';
 import { L } from '../regimes';
@@ -71,6 +72,13 @@ export default function Dashboard() {
   const nomsClients = useMemo(() => new Map(clients.map((c) => [c.id, c.nom])), [clients]);
   const attenteTotal = attente.reduce((s, d) => s + montantDu(d) - (encaisse.get(d.id ?? 0) ?? 0), 0);
   const retard = attente.filter((d) => d.dateEcheance < today);
+  const relances = useRelances();
+  const retards = useMemo(() => retardsParAnciennete(docs, encaisse, today), [docs, encaisse, today]);
+  const derniereRelance = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const r of relances) if ((m.get(r.factureId) ?? '') < r.date) m.set(r.factureId, r.date);
+    return m;
+  }, [relances]);
   const devisEnCours = docs.filter((d) => d.type === 'devis' && d.statut === 'envoye');
 
   const { params: regimeParams } = paramsFor(regime, overrides, year);
@@ -330,6 +338,39 @@ export default function Dashboard() {
               {seuils.length === 0 && profile.objectifCA <= 0 && <p className="small muted">{t('dash.noThreshold')}</p>}
             </div>
           </div>
+
+          {retards.total > 0 && (
+            <div className="card">
+              <div className="card-head">
+                <h2>{t('dash.overdueTitle')}</h2>
+                <Link to="/echeances" className="small">{t('dash.seeDeadlines')}</Link>
+              </div>
+              <p className="small text-2" style={{ marginBottom: 10 }}><b className="critical">{fmtMoney(retards.total)}</b> {t('dash.overdueTotal')}</p>
+              <div className="barlist">
+                {retards.tranches.filter((x) => x.nombre > 0).map((x) => (
+                  <div key={x.rang} className="barlist-row">
+                    <span className="barlist-name">{t(`dash.bucket.${x.rang}`)}</span>
+                    <span className="barlist-bar" aria-hidden="true"><i style={{ width: `${(x.montant / Math.max(...retards.tranches.map((y) => y.montant))) * 100}%` }} /></span>
+                    <span className="barlist-val">{fmtMoney0(x.montant)} <span className="muted">· {x.nombre}</span></span>
+                  </div>
+                ))}
+              </div>
+              <table className="table" style={{ marginTop: 10 }}>
+                <tbody>
+                  {retards.factures.slice(0, 4).map(({ doc: d, reste, jours }) => (
+                    <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
+                      <td className="small"><b className="tnum">{d.numero}</b><div className="muted">{clientName(d)}</div></td>
+                      <td className="small">
+                        <span className="critical">{tn('dl.lateDays', jours)}</span>
+                        <div className="muted">{derniereRelance.get(d.id ?? 0) ? t('dash.remindedOn', { date: fmtDate(derniereRelance.get(d.id ?? 0)!) }) : t('dash.neverReminded')}</div>
+                      </td>
+                      <td className="num small">{fmtMoney(reste)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           <div className="card">
             <div className="card-head">

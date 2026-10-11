@@ -48,6 +48,7 @@ const NAV: { to: string; key: string; icon: IconName; end?: boolean }[] = [
   { to: '/documents', key: 'nav.documents', icon: 'file' },
   { to: '/clients', key: 'nav.clients', icon: 'users' },
   { to: '/cotisations', key: 'nav.contributions', icon: 'calc' },
+  { to: '/echeances', key: 'nav.deadlines', icon: 'calendar' },
   { to: '/recettes', key: 'nav.ledger', icon: 'table' },
   { to: '/depenses', key: 'nav.expenses', icon: 'receipt' },
   { to: '/parametres', key: 'nav.settings', icon: 'settings' },
