@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ClientForm from '../components/ClientForm';
 import { Empty, Icon, Notice, PageHeader } from '../components/ui';
 import { db } from '../db/db';
@@ -20,6 +21,18 @@ export default function Clients() {
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<Client | null | undefined>(undefined); // undefined = fermé, null = nouveau
   const fileRef = useRef<HTMLInputElement>(null);
+  // Arrivée depuis la recherche : `?modifier=<id>` ouvre la fiche, `?nouveau=1` une fiche vierge.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const cible = params.get('modifier');
+    if (params.get('nouveau')) setEditing(null);
+    else if (cible) {
+      const c = clients.find((x) => x.id === Number(cible));
+      if (!c) return; // liste pas encore chargée : l'effet repassera
+      setEditing(c);
+    } else return;
+    setParams({}, { replace: true });
+  }, [params, clients, setParams]);
   const [msg, setMsg] = useState<{ tone?: 'warning' | 'critical'; text: string } | null>(null);
 
   const stats = useMemo(() => {

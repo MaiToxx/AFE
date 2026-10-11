@@ -130,8 +130,13 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
-    if (open && !d.open) d.showModal();
-    else if (!open && d.open) d.close();
+    if (open && !d.open) {
+      d.showModal();
+      // Le curseur va au premier champ du contenu : par défaut, il irait au bouton de fermeture, et
+      // la première touche tapée (ou Entrée) refermerait la fenêtre au lieu de remplir le formulaire.
+      const corps = d.querySelector('.modal-body');
+      (corps?.querySelector<HTMLElement>('[data-autofocus]') ?? corps?.querySelector<HTMLElement>('input:not([type=hidden]):not([type=file]):not([disabled]), textarea:not([disabled]), select:not([disabled])'))?.focus();
+    } else if (!open && d.open) d.close();
   }, [open]);
   return (
     <dialog

@@ -4,6 +4,7 @@ import { useLicense, useProfile } from '../db/hooks';
 import { LANGS, useI18n, type Lang } from '../i18n';
 import Automations from './Automations';
 import Onboarding from './Onboarding';
+import Recherche from './Recherche';
 import { Icon, type IconName } from './ui';
 
 export type Theme = 'auto' | 'light' | 'dark';
@@ -106,6 +107,18 @@ export default function Layout() {
   const dark = isDark(theme);
   const { t, lang, setLang } = useI18n();
   const { loaded, exists } = useProfile();
+  const [recherche, setRecherche] = useState(false);
+  // Ctrl+K (ou Cmd+K) ouvre la recherche depuis n'importe quel écran.
+  useEffect(() => {
+    const surTouche = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setRecherche(true);
+      }
+    };
+    window.addEventListener('keydown', surTouche);
+    return () => window.removeEventListener('keydown', surTouche);
+  }, []);
 
   if (loaded && !exists) return <Onboarding />;
 
@@ -123,6 +136,11 @@ export default function Layout() {
             <div className="brand-sub">{t('nav.brandSub')}</div>
           </div>
         </div>
+        <button type="button" className="item nav-search" onClick={() => setRecherche(true)} title={`${t('search.title')} (Ctrl+K)`}>
+          <Icon name="search" />
+          <span>{t('search.title')}</span>
+          <kbd>Ctrl K</kbd>
+        </button>
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => `item${isActive ? ' active' : ''}`}>
             <Icon name={n.icon} />
@@ -148,6 +166,7 @@ export default function Layout() {
       </nav>
       <main className="main">
         <Automations />
+        <Recherche open={recherche} onClose={() => setRecherche(false)} />
         <Outlet />
       </main>
     </div>
