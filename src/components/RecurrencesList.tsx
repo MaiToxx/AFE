@@ -50,7 +50,7 @@ export default function RecurrencesList() {
         </thead>
         <tbody>
           {recurrences.map((r) => {
-            const ht = computeTotals({ lignes: r.lignes, remise: r.remise, retenue: 0 }, false, false).totalHT;
+            const ht = computeTotals({ lignes: r.lignes, remise: r.remise, remiseType: r.remiseType, retenue: 0 }, false, false).totalHT;
             return (
               <tr key={r.id}>
                 <td><b>{r.libelle}</b>{r.objet && r.objet !== r.libelle && <div className="small text-2">{r.objet}</div>}</td>

@@ -100,12 +100,19 @@ export const DEFAULT_PROFILE: Profile = {
   prefixeFacture: 'F',
   prefixeDevis: 'D',
   prefixeAvoir: 'AV',
+  numerotation: 'annuelle',
+  numeroChiffres: 4,
+  numeroDepart: { facture: 0, devis: 0, avoir: 0, annee: 0 },
   delaiPaiementJours: 30,
   validiteDevisJours: 30,
   conditionsPaiement: '',
   mentionsPied: '',
   iban: '',
   bic: '',
+  qrPaiement: true,
+  cgv: '',
+  cgvDevis: true,
+  cgvFacture: false,
   objectifCA: 0,
   sauvegardeAuto: true,
   siret: '',
@@ -162,13 +169,14 @@ export async function saveProfile(patch: Partial<Profile>): Promise<void> {
 }
 
 /** Version du format de sauvegarde écrit par cette application. */
-const BACKUP_VERSION = 3;
+// 4 : remise en pourcentage, numérotation personnalisable (version 0.5 de l’application).
+const BACKUP_VERSION = 4;
 /** Réglages propres à cette installation : ni écrits dans une sauvegarde, ni repris d'une sauvegarde. */
 const INSTALLATION_SETTINGS: readonly string[] = [...LOCAL_SETTINGS, SETTING_TRIAL_SEEN, 'lastAutoBackup'];
 
 export interface Backup {
   app: 'afe';
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   exportedAt: string;
   profile: Profile | null;
   clients: Client[];

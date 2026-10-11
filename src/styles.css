@@ -413,6 +413,8 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
 .sheet .totals-block td { padding: 5px 9px; font-variant-numeric: tabular-nums; }
 .sheet .totals-block td:first-child { color: #444; }
 .sheet .totals-block td:last-child { text-align: right; }
+.sheet .totals-block tr.detail td { padding-top: 1px; padding-bottom: 1px; font-size: 8.8pt; color: #666; }
+.sheet-dark .totals-block tr.detail td { color: #a5a59f; }
 .sheet .totals-block tr.grand td { font-weight: 700; font-size: 12.5pt; border-top: 2px solid var(--doc-accent); padding-top: 8px; }
 .sheet .mentions { font-size: 8.8pt; color: #333; display: grid; gap: 7px; }
 .sheet .mentions h4 { font-size: 9pt; color: #111; margin-bottom: 1px; }

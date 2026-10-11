@@ -6,7 +6,7 @@ import { db } from '../db/db';
 import { useClients, usePaiements, useProfile, useRegime } from '../db/hooks';
 import type { ClientSnapshot } from '../db/types';
 import { tIn, useI18n, type Lang } from '../i18n';
-import { ligneTotalHT, montantPaye, normalizeDoc, profilDuDocument } from '../lib/documents';
+import { ligneTotalHT, montantPaye, montantRemise, normalizeDoc, profilDuDocument, sousTotal, ventilationTaxe } from '../lib/documents';
 import { fmtDate, fmtMoneyIn, fmtNum } from '../lib/format';
 import { L, getRegime, identifiantPrincipal, identifiantsPied, localeFor } from '../regimes';
 import { groupeOf } from '../regimes/engine';
@@ -69,8 +69,10 @@ export default function DocumentPrint() {
   const titre = tl(isFacture ? 'print.invoice' : isAvoir ? 'print.creditNote' : 'print.quote');
   const paye = montantPaye(doc, paiements);
   const dernierPaiement = paiements.filter((p) => p.factureId === doc.id).sort((a, b) => b.date.localeCompare(a.date))[0];
-  const brut = doc.lignes.reduce((s, l) => s + ligneTotalHT(l), 0);
-  const remise = Math.min(doc.remise || 0, brut);
+  const brut = sousTotal(doc);
+  const remise = montantRemise(doc, brut);
+  // Plusieurs taux sur le même document : la base et la taxe de chaque taux doivent y figurer.
+  const parTaux = profile.assujettiTVA ? ventilationTaxe(doc) : [];
   const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || tl('print.yourName');
   const proClient = client?.type === 'pro';
   const periode = doc.prestationDebut
@@ -208,11 +210,14 @@ export default function DocumentPrint() {
               {remise > 0 && (
                 <>
                   <tr><td>{tl('print.subtotal')}</td><td>{money(brut)}</td></tr>
-                  <tr><td>{tl('print.discount')}</td><td>− {money(remise)}</td></tr>
+                  <tr><td>{tl('print.discount')}{doc.remiseType === 'pourcent' ? ` (${fmtNum(doc.remise)} %)` : ''}</td><td>− {money(remise)}</td></tr>
                 </>
               )}
               <tr><td>{tl('print.totalExcl')}</td><td>{money(doc.totalHT)}</td></tr>
-              {profile.assujettiTVA && <tr><td>{regime.tva.nom}</td><td>{money(doc.totalTVA)}</td></tr>}
+              {profile.assujettiTVA && parTaux.length > 1 && parTaux.map((v) => (
+                <tr key={v.taux} className="detail"><td>{tl('print.taxAtRate', { taxe: regime.tva.nom, taux: fmtNum(v.taux), base: money(v.base) })}</td><td>{money(v.taxe)}</td></tr>
+              ))}
+              {profile.assujettiTVA && <tr><td>{parTaux.length > 1 ? tl('print.taxTotal', { taxe: regime.tva.nom }) : regime.tva.nom}</td><td>{money(doc.totalTVA)}</td></tr>}
               <tr className="grand"><td>{isAvoir ? tl('print.creditAmount') : profile.assujettiTVA ? tl('print.totalIncl') : tl('print.totalDue')}</td><td>{money(doc.totalTTC)}</td></tr>
               {doc.montantRetenue > 0 && (
                 <>

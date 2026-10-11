@@ -8,11 +8,12 @@ import PrestationForm from '../components/PrestationForm';
 import { Badge, Check, Field, Icon, Notice, NumInput, PageHeader, Seg } from '../components/ui';
 import { clearAll, db, deleteSetting, exportBackup, getSetting, importBackup, saveProfile, setSetting } from '../db/db';
 import { useCatalogue, useDocuments, useLicense, useProfile, useRegime, useRegimeOverrides, useSetting } from '../db/hooks';
-import type { Frequence, Nature, Prestation, Profile } from '../db/types';
+import type { DocType, Frequence, Nature, Prestation, Profile } from '../db/types';
 import { colon, LANGS, useI18n, type Lang } from '../i18n';
 import { dossierSauvegardes, ouvrirDossierSauvegardes, sauvegardeAutomatique } from '../lib/autoBackup';
 import { todayISO, yearOf } from '../lib/dates';
 import { loadDemo } from '../lib/demo';
+import { formatNumero, nextSeq, prefixeFor } from '../lib/documents';
 import { isTauri, openExternal, saveTextFile } from '../lib/desktop';
 import { fmtDate, fmtMoney } from '../lib/format';
 import { PURCHASE_URL, SUPPORT_EMAIL, TRIAL_DAYS, evaluate, verifyKey, type LicenseStatus } from '../lib/license';
@@ -371,12 +372,43 @@ function FacturationTab({ form, set, regime }: { form: Profile; set: (p: Partial
       <div className="form-section">
         <h3>{t('settings.numbering')}</h3>
         <div className="form-row">
-          <Field label={t('settings.invoicePrefix')} help={`${t('common.example')} ${form.prefixeFacture || 'F'}-${yearOf(todayISO())}-0001`}><input type="text" value={form.prefixeFacture} onChange={(e) => set({ prefixeFacture: e.target.value.trim() })} /></Field>
+          <Field label={t('settings.invoicePrefix')} help={`${t('common.example')} ${formatNumero(form.prefixeFacture, yearOf(todayISO()), 1, form)}`}><input type="text" value={form.prefixeFacture} onChange={(e) => set({ prefixeFacture: e.target.value.trim() })} /></Field>
           <Field label={t('settings.quotePrefix')}><input type="text" value={form.prefixeDevis} onChange={(e) => set({ prefixeDevis: e.target.value.trim() })} /></Field>
           <Field label={t('settings.creditPrefix')}><input type="text" value={form.prefixeAvoir} onChange={(e) => set({ prefixeAvoir: e.target.value.trim() })} /></Field>
           <Field label={t('settings.paymentDelay')}><NumInput value={form.delaiPaiementJours} onChange={(n) => set({ delaiPaiementJours: Math.round(n) })} min={0} /></Field>
           <Field label={t('settings.quoteValidity')}><NumInput value={form.validiteDevisJours} onChange={(n) => set({ validiteDevisJours: Math.round(n) })} min={0} /></Field>
         </div>
+        <div className="form-row" style={{ marginTop: 14 }}>
+          <div className="field">
+            <span className="label">{t('settings.numberingMode')}</span>
+            <Seg
+              value={form.numerotation}
+              onChange={(numerotation) => set({ numerotation })}
+              options={[
+                { value: 'annuelle', label: t('settings.numberingYearly') },
+                { value: 'continue', label: t('settings.numberingContinuous') },
+              ]}
+            />
+            <span className="help">{t('settings.numberingModeHelp')}</span>
+          </div>
+          <Field label={t('settings.numberDigits')}>
+            <select value={form.numeroChiffres} onChange={(e) => set({ numeroChiffres: Number(e.target.value) })}>
+              {[3, 4, 5, 6].map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+        <div className="form-row" style={{ marginTop: 14 }}>
+          {(['facture', 'devis', 'avoir'] as const).map((type) => (
+            <Field key={type} label={t(type === 'facture' ? 'settings.nextInvoiceNumber' : type === 'devis' ? 'settings.nextQuoteNumber' : 'settings.nextCreditNumber')}>
+              {/* L'année est notée avec le numéro : en numérotation annuelle, il ne vaut que pour elle. */}
+              <NumInput value={form.numeroDepart[type]} onChange={(n) => set({ numeroDepart: { ...form.numeroDepart, [type]: Math.max(0, Math.round(n)), annee: yearOf(todayISO()) } })} min={0} />
+            </Field>
+          ))}
+        </div>
+        <p className="help" style={{ marginTop: 6 }}>{t('settings.nextNumberHelp')}</p>
+        <ProchainsNumeros form={form} />
       </div>
       <div className="form-section">
         <h3>{t('settings.mentions')}</h3>
@@ -392,6 +424,29 @@ function FacturationTab({ form, set, regime }: { form: Profile; set: (p: Partial
       </div>
     </div>
   );
+}
+
+/** Numéros que porteront les prochains documents, d'après les réglages en cours de saisie. */
+function ProchainsNumeros({ form }: { form: Profile }) {
+  const { t } = useI18n();
+  const annee = yearOf(todayISO());
+  const docs = useDocuments();
+  const [numeros, setNumeros] = useState<Record<DocType, string> | null>(null);
+  const { prefixeFacture, prefixeDevis, prefixeAvoir, numerotation, numeroChiffres, numeroDepart } = form;
+  useEffect(() => {
+    let actif = true;
+    void (async () => {
+      const regles = { prefixeFacture, prefixeDevis, prefixeAvoir, numerotation, numeroChiffres, numeroDepart } as Profile;
+      const out = {} as Record<DocType, string>;
+      for (const type of ['facture', 'devis', 'avoir'] as const) out[type] = formatNumero(prefixeFor(type, regles), annee, await nextSeq(type, annee, regles), regles);
+      if (actif) setNumeros(out);
+    })();
+    return () => {
+      actif = false;
+    };
+  }, [prefixeFacture, prefixeDevis, prefixeAvoir, numerotation, numeroChiffres, numeroDepart, annee, docs.length]);
+  if (!numeros) return null;
+  return <p className="small text-2 tnum" style={{ marginTop: 6 }}>{t('settings.nextNumbersPreview', numeros)}</p>;
 }
 
 function CatalogueTab({ tauxTVA }: { tauxTVA: number }) {

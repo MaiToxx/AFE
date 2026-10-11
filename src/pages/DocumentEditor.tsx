@@ -13,10 +13,10 @@ import { LANGS, useI18n, type Lang } from '../i18n';
 import { isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
   avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
-  ligneTotalHT, montantDu, montantPaye, montantRembourse, newDoc, newLigne, nextSeq, normalizeDoc, prefixeFor, rembourser,
-  saveDoc, setStatut, statutInfo, supprimerDoc, supprimerPaiement,
+  ligneTotalHT, montantDu, montantPaye, montantRembourse, montantRemise, newDoc, newLigne, nextSeq, normalizeDoc, prefixeFor, rembourser,
+  saveDoc, setStatut, sousTotal, statutInfo, supprimerDoc, supprimerPaiement,
 } from '../lib/documents';
-import { fmtDate, fmtMoney, round2 } from '../lib/format';
+import { fmtDate, fmtMoney, fmtNum, round2 } from '../lib/format';
 import { canFinalize } from '../lib/license';
 import { supprimerRelance } from '../lib/relances';
 import { useGuard } from '../lib/useGuard';
@@ -172,8 +172,8 @@ export default function DocumentEditor() {
     ? { totalHT: doc.totalHT, totalTVA: doc.totalTVA, totalTTC: doc.totalTTC, montantRetenue: doc.montantRetenue, netAPayer: doc.netAPayer }
     : computeTotals(doc, profile.assujettiTVA, !!clientPro);
   const assujetti = locked && doc.emetteur ? doc.emetteur.assujettiTVA : profile.assujettiTVA;
-  const brut = doc.lignes.reduce((s, l) => s + ligneTotalHT(l), 0);
-  const remiseAppliquee = Math.min(Math.max(doc.remise || 0, 0), brut);
+  const brut = sousTotal(doc);
+  const remiseAppliquee = montantRemise(doc, brut);
   const paye = montantPaye(doc, paiements);
   const reste = round2(montantDu({ ...doc, ...totals }) - paye);
   const st = statutInfo(doc, paye);
@@ -242,7 +242,7 @@ export default function DocumentEditor() {
     d = { ...d, id: nid };
     setDirty(false);
     const annee = yearOf(d.dateEmission);
-    const numero = d.numero || formatNumero(prefixeFor(d.type, profile), annee, await nextSeq(d.type, annee));
+    const numero = d.numero || formatNumero(prefixeFor(d.type, profile), annee, await nextSeq(d.type, annee, profile), profile);
     // Mentions obligatoires de l'émetteur : on prévient plutôt que d'émettre un document incomplet sans le dire.
     const principal = identifiantPrincipal(regime);
     const manques = [
@@ -523,9 +523,16 @@ export default function DocumentEditor() {
               </table>
             </div>
             <div className="form-row" style={{ marginTop: 16 }}>
-              <Field label={t('editor.discount')}>
-                <NumInput value={doc.remise} disabled={locked} onChange={(remise) => update({ remise })} min={0} className="inline-num" />
-              </Field>
+              <div className="field">
+                <span className="label">{t('editor.discount')}</span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <NumInput value={doc.remise} disabled={locked} onChange={(remise) => update({ remise })} min={0} className="inline-num" ariaLabel={t('editor.discount')} />
+                  <select value={doc.remiseType === 'pourcent' ? 'pourcent' : 'montant'} disabled={locked} onChange={(e) => update({ remiseType: e.target.value as 'montant' | 'pourcent' })} aria-label={t('editor.discountType')} style={{ width: 'auto' }}>
+                    <option value="montant">{t('editor.discountAmount', { devise: doc.devise || profile.devise })}</option>
+                    <option value="pourcent">%</option>
+                  </select>
+                </div>
+              </div>
               <Field label={t('editor.notes')} className="span-2">
                 <textarea value={doc.notes} disabled={locked} rows={2} onChange={(e) => update({ notes: e.target.value })} placeholder={t('editor.notesPlaceholder')} />
               </Field>
@@ -538,7 +545,7 @@ export default function DocumentEditor() {
             <h2 style={{ marginBottom: 10 }}>{t('common.total')}</h2>
             <div className="totals">
               <div className="row"><span className="text-2">{t('editor.subtotal')}</span><span className="tnum">{fmtMoney(brut)}</span></div>
-              {doc.remise > 0 && <div className="row"><span className="text-2">{t('editor.discountShort')}</span><span className="tnum">− {fmtMoney(remiseAppliquee)}</span></div>}
+              {doc.remise > 0 && <div className="row"><span className="text-2">{t('editor.discountShort')}{doc.remiseType === 'pourcent' ? ` (${fmtNum(doc.remise)} %)` : ''}</span><span className="tnum">− {fmtMoney(remiseAppliquee)}</span></div>}
               <div className="row"><span className="text-2">{t('editor.totalExcl')}</span><span className="tnum">{fmtMoney(totals.totalHT)}</span></div>
               {assujetti ? (
                 <div className="row"><span className="text-2">{regime.tva.nom}</span><span className="tnum">{fmtMoney(totals.totalTVA)}</span></div>

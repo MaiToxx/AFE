@@ -32,13 +32,45 @@ export function normalizeDoc(d: Doc): Doc {
   return n;
 }
 
+/** Sous-total hors taxe des lignes, avant remise globale. */
+export function sousTotal(doc: Pick<Doc, 'lignes'>): number {
+  return doc.lignes.reduce((s, l) => s + ligneTotalHT(l), 0);
+}
+
+/** Montant de la remise globale, qu'elle soit saisie en montant ou en pourcentage du sous-total (plafonnée à celui-ci). */
+export function montantRemise(doc: Pick<Doc, 'remise' | 'remiseType'>, brut: number): number {
+  const valeur = Math.max(doc.remise || 0, 0);
+  const montant = doc.remiseType === 'pourcent' ? round2((brut * Math.min(valeur, 100)) / 100) : valeur;
+  return Math.min(montant, brut);
+}
+
+/**
+ * Base hors taxe et taxe par taux, remise globale répartie au prorata : le détail qui doit figurer sur
+ * un document quand plusieurs taux coexistent. La somme des taxes est celle du total du document :
+ * l'arrondi restant va au taux qui porte la plus forte taxe.
+ */
+export function ventilationTaxe(doc: Pick<Doc, 'lignes' | 'remise' | 'remiseType'>): { taux: number; base: number; taxe: number }[] {
+  const brut = sousTotal(doc);
+  if (brut <= 0) return [];
+  const coef = (brut - montantRemise(doc, brut)) / brut;
+  const bases = new Map<number, number>();
+  for (const l of doc.lignes) bases.set(l.tauxTVA || 0, (bases.get(l.tauxTVA || 0) ?? 0) + ligneTotalHT(l) * coef);
+  const lignes = [...bases.entries()].filter(([, base]) => Math.abs(base) > 0.004).map(([taux, base]) => ({ taux, base: round2(base), taxe: round2((base * taux) / 100), exacte: (base * taux) / 100 }));
+  const ecart = round2(round2(lignes.reduce((s, l) => s + l.exacte, 0)) - lignes.reduce((s, l) => s + l.taxe, 0));
+  if (ecart !== 0 && lignes.length) {
+    const cible = lignes.reduce((a, b) => (b.taxe > a.taxe ? b : a));
+    cible.taxe = round2(cible.taxe + ecart);
+  }
+  return lignes.map(({ taux, base, taxe }) => ({ taux, base, taxe })).sort((a, b) => b.taux - a.taux);
+}
+
 export function computeTotals(
-  doc: Pick<Doc, 'lignes' | 'remise' | 'retenue'>,
+  doc: Pick<Doc, 'lignes' | 'remise' | 'remiseType' | 'retenue'>,
   assujettiTVA: boolean,
   appliquerRetenue: boolean,
 ): Pick<Doc, 'totalHT' | 'totalTVA' | 'totalTTC' | 'montantRetenue' | 'netAPayer'> {
-  const brut = doc.lignes.reduce((s, l) => s + ligneTotalHT(l), 0);
-  const remise = Math.min(Math.max(doc.remise || 0, 0), brut);
+  const brut = sousTotal(doc);
+  const remise = montantRemise(doc, brut);
   const totalHT = round2(brut - remise);
   let tva = 0;
   if (assujettiTVA && brut > 0) {
@@ -93,16 +125,29 @@ export function newDoc(type: DocType, profile: Profile, clientId: number | null 
   };
 }
 
-export function formatNumero(prefix: string, annee: number, seq: number): string {
-  const n = `${annee}-${String(seq).padStart(4, '0')}`;
-  return prefix ? `${prefix}-${n}` : n;
+/**
+ * Numéro d'un document : « F-2026-0001 » en numérotation annuelle, « F-0001 » en numérotation
+ * continue, avec le nombre de chiffres choisi dans les réglages (4 par défaut).
+ */
+export function formatNumero(prefix: string, annee: number, seq: number, regles?: Pick<Profile, 'numerotation' | 'numeroChiffres'>): string {
+  const chiffres = Math.min(Math.max(Math.round(regles?.numeroChiffres ?? 4) || 4, 1), 8);
+  const ordre = String(seq).padStart(chiffres, '0');
+  const corps = regles?.numerotation === 'continue' ? ordre : `${annee}-${ordre}`;
+  return prefix ? `${prefix}-${corps}` : corps;
 }
 
-/** Prochain numéro de séquence pour un type de document et une année donnés. */
-export async function nextSeq(type: DocType, annee: number): Promise<number> {
+/**
+ * Prochain numéro d'ordre d'un type de document. En numérotation annuelle, la suite est propre à
+ * l'année du document ; en numérotation continue, elle court sur tous les documents. Le numéro de
+ * départ choisi dans les réglages (reprise d'un autre logiciel) relève la suite s'il la dépasse.
+ */
+export async function nextSeq(type: DocType, annee: number, regles?: Pick<Profile, 'numerotation' | 'numeroDepart'>): Promise<number> {
+  const continu = regles?.numerotation === 'continue';
   const docs = await db.documents.where('type').equals(type).toArray();
-  const max = docs.filter((d) => d.numeroSeq > 0 && yearOf(d.dateEmission) === annee).reduce((m, d) => Math.max(m, d.numeroSeq), 0);
-  return max + 1;
+  const max = docs.filter((d) => d.numeroSeq > 0 && (continu || yearOf(d.dateEmission) === annee)).reduce((m, d) => Math.max(m, d.numeroSeq), 0);
+  const dep = regles?.numeroDepart;
+  const depart = dep && (continu || dep.annee === annee) ? Math.floor(Number(dep[type]) || 0) : 0;
+  return Math.max(max + 1, depart, 1);
 }
 
 /** Émetteur à figer dans un document au moment où il est émis. */
@@ -182,12 +227,20 @@ export async function finaliser(doc: Doc, profile: Profile): Promise<Doc> {
     const client = await db.clients.get(base.clientId);
     if (!client) throw new Error('doc.clientMissing');
     const annee = yearOf(base.dateEmission);
-    const seq = base.numeroSeq > 0 ? base.numeroSeq : await nextSeq(base.type, annee);
+    let seq = base.numeroSeq > 0 ? base.numeroSeq : await nextSeq(base.type, annee, profile);
+    let numero = base.numero || formatNumero(prefixeFor(base.type, profile), annee, seq, profile);
+    // Un numéro ne sert jamais deux fois, même après un changement de préfixe ou de format de numérotation.
+    if (!base.numero) {
+      while ((await db.documents.where('numero').equals(numero).count()) > 0) {
+        seq += 1;
+        numero = formatNumero(prefixeFor(base.type, profile), annee, seq, profile);
+      }
+    }
     const updated: Doc = {
       ...base,
       ...computeTotals(base, profile.assujettiTVA, client.type === 'pro'),
       numeroSeq: seq,
-      numero: base.numero || formatNumero(prefixeFor(base.type, profile), annee, seq),
+      numero,
       client: clientSnapshot(client),
       emetteur: emetteurSnapshot(profile),
       statut: base.type === 'facture' ? 'envoyee' : 'envoye',
@@ -219,6 +272,7 @@ export async function dupliquer(doc: Doc, profile: Profile): Promise<number> {
   copy.adresseLivraison = doc.adresseLivraison ?? '';
   copy.lignes = doc.lignes.map((l) => ({ ...l, id: uid() }));
   copy.remise = doc.remise;
+  copy.remiseType = doc.remiseType;
   copy.retenue = doc.retenue;
   copy.notes = doc.notes;
   return saveDoc(copy, profile);
@@ -232,6 +286,7 @@ export async function factureDepuisDevis(devis: Doc, profile: Profile): Promise<
   f.langue = devis.langue;
   f.lignes = devis.lignes.map((l) => ({ ...l, id: uid() }));
   f.remise = devis.remise;
+  f.remiseType = devis.remiseType;
   f.retenue = devis.retenue;
   f.notes = devis.notes;
   f.devisId = devis.id ?? null;
@@ -260,6 +315,7 @@ export async function avoirDepuisFacture(facture: Doc, profile: Profile): Promis
   a.devise = facture.devise || profile.devise;
   a.lignes = facture.lignes.map((l) => ({ ...l, id: uid() }));
   a.remise = facture.remise;
+  a.remiseType = facture.remiseType;
   a.retenue = facture.retenue;
   a.client = facture.client;
   a.avoirDe = facture.id ?? null;

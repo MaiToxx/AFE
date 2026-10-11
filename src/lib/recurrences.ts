@@ -26,6 +26,7 @@ export async function creerRecurrence(
     activite: facture.activite,
     lignes: facture.lignes.map((l) => ({ ...l, id: uid() })),
     remise: facture.remise,
+    remiseType: facture.remiseType,
     notes: facture.notes,
     frequence: opts.frequence,
     prochaine: opts.prochaine,
@@ -46,6 +47,7 @@ export async function genererOccurrence(rec: Recurrence, profile: Profile): Prom
   f.activite = rec.activite;
   f.lignes = rec.lignes.map((l) => ({ ...l, id: uid() }));
   f.remise = rec.remise;
+  f.remiseType = rec.remiseType;
   f.notes = rec.notes;
   f.dateEmission = rec.prochaine;
   f.dateEcheance = addDays(rec.prochaine, profile.delaiPaiementJours || 30);

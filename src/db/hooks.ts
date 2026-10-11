@@ -23,6 +23,9 @@ export function normalizeProfile(row: Partial<Profile> | undefined): Profile {
   p.statut = getRegime(p.pays, p.statut).statutId;
   if (!isLang(p.langueDocuments)) p.langueDocuments = 'fr';
   if (!p.devise) p.devise = getRegime(p.pays, p.statut).devise;
+  if (p.numerotation !== 'continue') p.numerotation = 'annuelle';
+  p.numeroChiffres = Math.min(Math.max(Math.round(Number(p.numeroChiffres)) || 4, 3), 6);
+  p.numeroDepart = { ...DEFAULT_PROFILE.numeroDepart, ...(p.numeroDepart ?? {}) };
   return { ...p, identifiants, optionsRegime: p.optionsRegime ?? {}, remunerationMensuelle: Number(p.remunerationMensuelle) || 0 };
 }
 

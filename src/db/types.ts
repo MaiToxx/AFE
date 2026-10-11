@@ -60,12 +60,27 @@ export interface Profile {
   prefixeFacture: string;
   prefixeDevis: string;
   prefixeAvoir: string;
+  /** Numérotation : « annuelle » (F-2026-0001, repart à 1 chaque année) ou « continue » (F-0001, ne repart jamais). */
+  numerotation: 'annuelle' | 'continue';
+  /** Nombre de chiffres du numéro d'ordre (3 à 6). */
+  numeroChiffres: number;
+  /**
+   * Numéro d'ordre minimal du prochain document de chaque type (0 = suite automatique), pour reprendre
+   * la numérotation d'un autre logiciel. En numérotation annuelle, il ne vaut que pour `annee`.
+   */
+  numeroDepart: { facture: number; devis: number; avoir: number; annee: number };
   delaiPaiementJours: number;
   validiteDevisJours: number;
   conditionsPaiement: string;
   mentionsPied: string;
   iban: string;
   bic: string;
+  /** Afficher un QR code de virement SEPA sur les factures en euros (IBAN requis). */
+  qrPaiement: boolean;
+  /** Conditions générales, imprimées sur une page à part à la suite des documents choisis. */
+  cgv: string;
+  cgvDevis: boolean;
+  cgvFacture: boolean;
   objectifCA: number;
   sauvegardeAuto: boolean;
   /** @deprecated migrés dans `identifiants` (siret, tva). */
@@ -87,6 +102,10 @@ export interface Client {
   /** Identifiant officiel du client (SIRET, NIF, UID… selon le régime). */
   siret: string;
   notes: string;
+  /** Langue des documents émis pour ce client ('' ou absent : langue par défaut du profil). */
+  langue?: Lang | '';
+  /** Délai de paiement propre à ce client, en jours (absent ou null : délai par défaut du profil). */
+  delaiPaiementJours?: number | null;
   createdAt: string;
 }
 
@@ -155,7 +174,10 @@ export interface Doc {
   langue: Lang | '';
   devise: string;
   lignes: Ligne[];
-  remise: number; // € HT
+  /** Remise globale : montant HT, ou pourcentage du sous-total selon `remiseType`. */
+  remise: number;
+  /** Absent sur les documents antérieurs à la version 0.5 : la remise y est un montant. */
+  remiseType?: 'montant' | 'pourcent';
   /** Retenue à la source (%) pratiquée par le client professionnel, 0 si aucune. */
   retenue: number;
   notes: string;
@@ -277,6 +299,7 @@ export interface Recurrence {
   activite: string;
   lignes: Ligne[];
   remise: number;
+  remiseType?: 'montant' | 'pourcent';
   notes: string;
   frequence: FrequenceRecurrence;
   prochaine: string;
