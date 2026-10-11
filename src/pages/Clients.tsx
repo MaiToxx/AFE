@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ClientForm from '../components/ClientForm';
 import { Empty, Icon, Notice, PageHeader } from '../components/ui';
 import { db } from '../db/db';
@@ -23,6 +23,7 @@ export default function Clients() {
   const fileRef = useRef<HTMLInputElement>(null);
   // Arrivée depuis la recherche : `?modifier=<id>` ouvre la fiche, `?nouveau=1` une fiche vierge.
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   useEffect(() => {
     const cible = params.get('modifier');
     if (params.get('nouveau')) setEditing(null);
@@ -153,6 +154,9 @@ export default function Clients() {
                       <td className={`num${s.impaye > 0 ? ' warning' : ''}`}>{s.impaye > 0 ? fmtMoney(s.impaye) : '—'}</td>
                       <td>
                         <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                          {s.n > 0 && (
+                            <button type="button" className="btn ghost sm icon" onClick={() => navigate(`/clients/${c.id}/releve`)} aria-label={t('clients.statement')} title={t('clients.statement')}><Icon name="table" size={15} /></button>
+                          )}
                           <button type="button" className="btn ghost sm icon" onClick={() => setEditing(c)} aria-label={t('common.edit')}><Icon name="pen" size={15} /></button>
                           <button type="button" className="btn danger sm icon" onClick={() => remove(c)} aria-label={t('common.delete')}><Icon name="trash" size={15} /></button>
                         </div>

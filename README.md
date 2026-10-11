@@ -70,6 +70,8 @@ Windows). Aucune inscription, aucun serveur : toutes les données vivent sur l'a
 - **Clients** : import et export CSV, langue des documents et délai de paiement propres à chaque
   client. Export CSV des documents.
 - **Confort de saisie** : lignes réordonnables, notes par défaut des devis et des factures.
+- **Relevé de compte client** : factures à régler (ou toutes les factures), réglé, reste dû, total
+  par devise, dans la langue du client, prêt à imprimer.
 - **Envoi par e-mail** : message pré-rempli dans la langue du document (le PDF reste à joindre).
 - **Recherche globale** (`Ctrl+K`) : numéro, client, objet, page ou action, entièrement au clavier.
 - **Sauvegarde / restauration** JSON, sauvegarde automatique (version bureau, toutes les 10 min),

@@ -11,6 +11,7 @@ import Dashboard from './pages/Dashboard';
 import Depenses from './pages/Depenses';
 import DocumentEditor from './pages/DocumentEditor';
 import DocumentPrint from './pages/DocumentPrint';
+import ReleveClient from './pages/ReleveClient';
 import Echeances from './pages/Echeances';
 import Documents from './pages/Documents';
 import Parametres from './pages/Parametres';
@@ -37,6 +38,7 @@ export default function App() {
       <HashRouter>
         <Routes>
           <Route path="/documents/:id/imprimer" element={<DocumentPrint />} />
+          <Route path="/clients/:id/releve" element={<ReleveClient />} />
           <Route element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="documents" element={<Documents />} />
