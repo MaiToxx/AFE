@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import ClientForm from '../components/ClientForm';
-import { Empty, Icon, PageHeader } from '../components/ui';
+import { Empty, Icon, Notice, PageHeader } from '../components/ui';
 import { db } from '../db/db';
 import { useClients, useDocuments, useRegime } from '../db/hooks';
 import type { Client } from '../db/types';
 import { useI18n } from '../i18n';
+import { lireTexte, parseCSV } from '../lib/csv';
+import { todayISO } from '../lib/dates';
+import { saveTextFile } from '../lib/desktop';
+import { clientsCSV, clientsDepuisCSV } from '../lib/exports';
 import { fmtMoney } from '../lib/format';
 import { L } from '../regimes';
 
@@ -15,6 +19,8 @@ export default function Clients() {
   const docs = useDocuments();
   const [q, setQ] = useState('');
   const [editing, setEditing] = useState<Client | null | undefined>(undefined); // undefined = fermé, null = nouveau
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [msg, setMsg] = useState<{ tone?: 'warning' | 'critical'; text: string } | null>(null);
 
   const stats = useMemo(() => {
     const m = new Map<number, { n: number; total: number; impaye: number }>();
@@ -47,17 +53,48 @@ export default function Clients() {
     if (confirm(t('clients.confirmDelete', { name: c.nom }))) await db.clients.delete(c.id!);
   }
 
+  async function exporter() {
+    await saveTextFile(`afe-${t('clients.file')}-${todayISO()}.csv`, clientsCSV(clients));
+  }
+
+  /** Import depuis le fichier CSV d'un tableur ou d'un autre logiciel : les clients déjà présents sont ignorés. */
+  async function importer(fichier: File | undefined) {
+    if (fileRef.current) fileRef.current.value = '';
+    if (!fichier) return;
+    setMsg(null);
+    try {
+      const lu = clientsDepuisCSV(parseCSV(await lireTexte(fichier)), await db.clients.toArray());
+      if (!lu) return setMsg({ tone: 'critical', text: t('clients.importNoName') });
+      if (lu.nouveaux.length === 0) return setMsg({ tone: 'warning', text: t('clients.importNone') });
+      if (!confirm(t('clients.importConfirm', { n: lu.nouveaux.length, doublons: lu.doublons }))) return;
+      await db.clients.bulkAdd(lu.nouveaux);
+      setMsg({ text: t('clients.importDone', { n: lu.nouveaux.length }) });
+    } catch {
+      setMsg({ tone: 'critical', text: t('clients.importFailed') });
+    }
+  }
+
   return (
     <>
       <PageHeader
         title={t('clients.title')}
         subtitle={tn('clients.count', clients.length)}
         actions={
-          <button type="button" className="btn primary" onClick={() => setEditing(null)}>
-            <Icon name="plus" /> {t('clients.new')}
-          </button>
+          <>
+            <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" hidden onChange={(e) => void importer(e.target.files?.[0])} />
+            <button type="button" className="btn" onClick={() => fileRef.current?.click()} title={t('clients.importHelp')}>
+              <Icon name="upload" /> {t('common.import')}
+            </button>
+            <button type="button" className="btn" onClick={exporter} disabled={!clients.length}>
+              <Icon name="download" /> {t('ledger.exportCsv')}
+            </button>
+            <button type="button" className="btn primary" onClick={() => setEditing(null)}>
+              <Icon name="plus" /> {t('clients.new')}
+            </button>
+          </>
         }
       />
+      {msg && <div style={{ marginBottom: 14 }}><Notice tone={msg.tone}>{msg.text}</Notice></div>}
       <div className="card">
         <div className="toolbar">
           <input type="text" placeholder={t('common.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} aria-label={t('common.search')} />

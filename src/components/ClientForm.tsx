@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { db } from '../db/db';
 import { useRegime } from '../db/hooks';
 import type { Client } from '../db/types';
-import { useI18n } from '../i18n';
+import { LANGS, useI18n, type Lang } from '../i18n';
 import { useGuard } from '../lib/useGuard';
 import { L } from '../regimes';
 import { Field, Modal, Seg } from './ui';
@@ -18,6 +18,8 @@ const EMPTY: Omit<Client, 'id' | 'createdAt'> = {
   telephone: '',
   siret: '',
   notes: '',
+  langue: '',
+  delaiPaiementJours: null,
 };
 
 export default function ClientForm({ open, client, onClose, onSaved }: {
@@ -113,6 +115,27 @@ export default function ClientForm({ open, client, onClose, onSaved }: {
           <input type="text" value={form.siret} onChange={(e) => set({ siret: e.target.value })} />
         </Field>
       )}
+      <div className="form-row">
+        <Field label={t('clients.form.language')}>
+          <select value={form.langue ?? ''} onChange={(e) => set({ langue: e.target.value as Lang | '' })}>
+            <option value="">{t('clients.form.languageDefault')}</option>
+            {LANGS.map((l) => (
+              <option key={l.code} value={l.code}>{l.label}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label={t('clients.form.paymentDelay')} help={t('clients.form.paymentDelayHelp')}>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={form.delaiPaiementJours ?? ''}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, '').slice(0, 3);
+              set({ delaiPaiementJours: v === '' ? null : Number(v) });
+            }}
+          />
+        </Field>
+      </div>
       <Field label={t('clients.form.notes')}>
         <textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} rows={2} />
       </Field>

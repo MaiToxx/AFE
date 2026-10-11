@@ -49,8 +49,10 @@ export async function genererOccurrence(rec: Recurrence, profile: Profile): Prom
   f.remise = rec.remise;
   f.remiseType = rec.remiseType;
   f.notes = rec.notes;
+  const client = rec.clientId ? await db.clients.get(rec.clientId) : undefined;
+  if (client?.langue) f.langue = client.langue;
   f.dateEmission = rec.prochaine;
-  f.dateEcheance = addDays(rec.prochaine, profile.delaiPaiementJours || 30);
+  f.dateEcheance = addDays(rec.prochaine, typeof client?.delaiPaiementJours === 'number' ? client.delaiPaiementJours : profile.delaiPaiementJours || 30);
   f.recurrenceId = rec.id ?? null;
   const id = await db.transaction('rw', [db.recurrences, db.documents, db.clients], async () => {
     const courant = await db.recurrences.get(rec.id!);

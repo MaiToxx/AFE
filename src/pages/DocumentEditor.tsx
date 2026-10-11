@@ -10,7 +10,7 @@ import { db } from '../db/db';
 import { useClients, useLicense, usePaiements, useProfile, useRegime, useRelances } from '../db/hooks';
 import { MOYENS, type Doc, type DocType, type Ligne, type MoyenPaiement, type Prestation } from '../db/types';
 import { LANGS, useI18n, type Lang } from '../i18n';
-import { isValidISO, todayISO, yearOf } from '../lib/dates';
+import { addDays, isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
   avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
   ligneTotalHT, montantDu, montantPaye, montantRembourse, montantRemise, newDoc, newLigne, nextSeq, normalizeDoc, prefixeFor, rembourser,
@@ -191,6 +191,15 @@ export default function DocumentEditor() {
     setDoc((d) => (d ? { ...d, ...patch } : d));
     setDirty(true);
     setError(null);
+  };
+  /** Le client choisi apporte sa langue de document et, pour une facture, son délai de paiement. */
+  const choisirClient = (clientId: number | null) => {
+    const c = clients.find((x) => x.id === clientId);
+    update({
+      clientId,
+      ...(c?.langue ? { langue: c.langue } : {}),
+      ...(c && doc.type === 'facture' && typeof c.delaiPaiementJours === 'number' && isValidISO(doc.dateEmission) ? { dateEcheance: addDays(doc.dateEmission, c.delaiPaiementJours) } : {}),
+    });
   };
   const updateLigne = (lid: string, patch: Partial<Ligne>) => update({ lignes: doc.lignes.map((l) => (l.id === lid ? { ...l, ...patch } : l)) });
   const removeLigne = (lid: string) => update({ lignes: doc.lignes.filter((l) => l.id !== lid) });
@@ -407,7 +416,7 @@ export default function DocumentEditor() {
               <div className="field">
                 <span className="label">{t('common.client')}</span>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <select value={doc.clientId ?? ''} disabled={locked} onChange={(e) => update({ clientId: e.target.value ? Number(e.target.value) : null })} aria-label={t('common.client')}>
+                  <select value={doc.clientId ?? ''} disabled={locked} onChange={(e) => choisirClient(e.target.value ? Number(e.target.value) : null)} aria-label={t('common.client')}>
                     <option value="">{t('editor.chooseClient')}</option>
                     {clients.map((c) => (
                       <option key={c.id} value={c.id}>{c.nom}</option>

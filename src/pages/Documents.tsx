@@ -2,10 +2,12 @@ import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import RecurrencesList from '../components/RecurrencesList';
 import { Badge, Empty, Icon, PageHeader } from '../components/ui';
-import { useClients, useDocuments, usePaiements, useRelances } from '../db/hooks';
+import { useClients, useDocuments, usePaiements, useRegime, useRelances } from '../db/hooks';
 import type { Doc, DocType } from '../db/types';
 import { useI18n } from '../i18n';
 import { todayISO } from '../lib/dates';
+import { saveTextFile } from '../lib/desktop';
+import { documentsCSV } from '../lib/exports';
 import { statutInfo, supprimerDoc } from '../lib/documents';
 import { fmtDate, fmtMoney, round2 } from '../lib/format';
 import { encaisseParFacture } from '../lib/stats';
@@ -50,6 +52,7 @@ export default function Documents() {
   const paiements = usePaiements();
   const clients = useClients();
   const relances = useRelances();
+  const regime = useRegime();
   const [q, setQ] = useState('');
   // La liste suit la saisie avec un léger différé : la frappe reste fluide même avec beaucoup de documents.
   const recherche = useDeferredValue(q);
@@ -84,6 +87,14 @@ export default function Documents() {
   function switchType(k: DocType | 'recurrente') {
     setParams({ type: k });
     setStatut('tous');
+  }
+
+  /** Journal des documents affichés (filtre et recherche compris), pour le comptable ou un tableur. */
+  async function exporter() {
+    const dernierPaiement = new Map<number, string>();
+    for (const p of paiements) if (p.factureId && (dernierPaiement.get(p.factureId) ?? '') < p.date) dernierPaiement.set(p.factureId, p.date);
+    const chrono = [...list].reverse();
+    await saveTextFile(`afe-${t(`docs.file.${type}`)}-${today}.csv`, documentsCSV(chrono, { encaisse, dernierPaiement, nomClient: clientName, taxe: regime.tva.nom, today }));
   }
 
   async function remove(d: Doc) {
@@ -126,6 +137,9 @@ export default function Documents() {
               </select>
               <span className="spacer" />
               <span className="small text-2">{tn('docs.count', list.length)} · {fmtMoney(total)}</span>
+              <button type="button" className="btn sm" onClick={exporter} disabled={!list.length}>
+                <Icon name="download" size={15} /> {t('ledger.exportCsv')}
+              </button>
             </div>
             {list.length === 0 ? (
               <Empty

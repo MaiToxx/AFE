@@ -26,7 +26,7 @@ for (const f of files) for (const m of read(f).matchAll(literal)) used.add(m[1])
 ['freq.mensuelle', 'freq.trimestrielle', 'freq.annuelle', 'period.quarter.1', 'period.quarter.2', 'period.quarter.3', 'period.quarter.4',
   'bareme.type.pct_ca', 'bareme.type.pct_net', 'bareme.type.fixe_mois', 'bareme.type.tranches_mois', 'bareme.type.tranches_annuel',
   'bareme.cat.social', 'bareme.cat.impot', 'bareme.cat.autre', 'bareme.group.vente', 'bareme.group.services', 'cotis.base.ca', 'cotis.base.net', 'cotis.base.remuneration', 'cotis.base.resultat',
-  'dl.type.declaration', 'dl.type.facture', 'dl.type.devis', 'dl.type.recurrence', 'dash.bucket.1', 'dash.bucket.2', 'dash.bucket.3', 'dash.bucket.4'].forEach((k) => used.add(k));
+  'docs.file.facture', 'docs.file.devis', 'docs.file.avoir', 'dl.type.declaration', 'dl.type.facture', 'dl.type.devis', 'dl.type.recurrence', 'dash.bucket.1', 'dash.bucket.2', 'dash.bucket.3', 'dash.bucket.4'].forEach((k) => used.add(k));
 // Faux positifs : noms de fichiers, de réglages ou codes d'erreur internes qui ressemblent à des clés.
 ['licence.key', 'licence.required', 'backup.newer'].forEach((k) => used.delete(k));
 
