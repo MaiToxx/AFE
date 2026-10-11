@@ -184,6 +184,8 @@ export interface Doc {
   retenue: number;
   notes: string;
   devisId: number | null; // facture issue d'un devis
+  /** Facture d'acompte : une part du devis `devisId`, déduite de la facture finale. */
+  acompte?: boolean;
   factureId: number | null; // devis converti en facture
   avoirDe: number | null; // avoir : facture corrigée
   avoirId: number | null; // facture : avoir émis dessus

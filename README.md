@@ -60,6 +60,8 @@ Windows). Aucune inscription, aucun serveur : toutes les données vivent sur l'a
   plusieurs.
 - **QR code de virement SEPA** sur les factures en euros : le client scanne, son application
   bancaire est pré-remplie (bénéficiaire, IBAN, montant restant dû, référence).
+- **Factures d'acompte** : depuis un devis, pour le pourcentage voulu (une ligne par taux de taxe) ;
+  les acomptes émis sont déduits automatiquement de la facture finale.
 - **Conditions générales** : texte libre joint en page annexe aux devis et/ou aux factures ; un
   document émis conserve les conditions en vigueur le jour de son émission.
 - **Échéancier** : déclarations, factures à encaisser, devis en fin de validité et factures

@@ -68,7 +68,7 @@ export default function DocumentPrint() {
   const date = (iso: string) => fmtDate(iso, locale);
   const isFacture = doc.type === 'facture';
   const isAvoir = doc.type === 'avoir';
-  const titre = tl(isFacture ? 'print.invoice' : isAvoir ? 'print.creditNote' : 'print.quote');
+  const titre = tl(isFacture && doc.acompte ? 'print.depositInvoice' : isFacture ? 'print.invoice' : isAvoir ? 'print.creditNote' : 'print.quote');
   const paye = montantPaye(doc, paiements);
   const dernierPaiement = paiements.filter((p) => p.factureId === doc.id).sort((a, b) => b.date.localeCompare(a.date))[0];
   const brut = sousTotal(doc);

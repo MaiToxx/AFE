@@ -22,7 +22,7 @@ export function documentsCSV(docs: Doc[], o: { encaisse: Map<number, number>; de
     const paye = d.type === 'facture' ? o.encaisse.get(d.id ?? 0) ?? 0 : 0;
     const emise = d.type === 'facture' && d.statut !== 'brouillon' && d.statut !== 'annulee';
     return [
-      csvText(t(d.type === 'facture' ? 'doc.invoice' : d.type === 'avoir' ? 'doc.creditNote' : 'doc.quote')),
+      csvText(t(d.type === 'facture' && d.acompte ? 'doc.depositInvoice' : d.type === 'facture' ? 'doc.invoice' : d.type === 'avoir' ? 'doc.creditNote' : 'doc.quote')),
       csvText(d.numero),
       csvText(fmtDate(d.dateEmission)),
       csvText(d.type === 'avoir' ? '' : fmtDate(d.dateEcheance)),

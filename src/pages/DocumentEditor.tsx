@@ -1,3 +1,4 @@
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import BuyLicenceButton from '../components/BuyLicenceButton';
@@ -12,7 +13,7 @@ import { MOYENS, type Doc, type DocType, type Ligne, type MoyenPaiement, type Pr
 import { LANGS, useI18n, type Lang } from '../i18n';
 import { addDays, isValidISO, todayISO, yearOf } from '../lib/dates';
 import {
-  avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
+  acompteDepuisDevis, acomptesDuDevis, avoirDepuisFacture, computeTotals, docLabel, dupliquer, encaisser, factureDepuisDevis, finaliser, formatNumero, isLocked,
   ligneTotalHT, montantDu, montantPaye, montantRembourse, montantRemise, newDoc, newLigne, nextSeq, normalizeDoc, prefixeFor, rembourser,
   saveDoc, setStatut, sousTotal, statutInfo, supprimerDoc, supprimerPaiement,
 } from '../lib/documents';
@@ -77,6 +78,9 @@ export default function DocumentEditor() {
   const [relanceModal, setRelanceModal] = useState(false);
   const [recurrenceModal, setRecurrenceModal] = useState(false);
   const [linked, setLinked] = useState<Doc | null>(null);
+  const [acompteModal, setAcompteModal] = useState(false);
+  // Factures d'acompte déjà créées sur ce devis (brouillons compris).
+  const acomptes = useLiveQuery(async () => (doc?.type === 'devis' && doc.id ? acomptesDuDevis(doc.id) : []), [doc?.type, doc?.id]) ?? [];
 
   // Chargement (ou création en mémoire pour un nouveau document).
   useEffect(() => {
@@ -300,6 +304,12 @@ export default function DocumentEditor() {
     navigate(`/documents/${nid}`);
   }
 
+  async function onAcompte(pourcent: number) {
+    const nid = await acompteDepuisDevis(doc!, pourcent, profile);
+    setAcompteModal(false);
+    navigate(`/documents/${nid}`);
+  }
+
   async function onAnnuler() {
     if (!confirm(t('editor.confirmCancelInvoice'))) return;
     await setStatut(doc!.id!, 'annulee');
@@ -318,7 +328,7 @@ export default function DocumentEditor() {
   }
 
   const title = isNew && !doc.id ? (isFacture ? t('editor.newInvoice') : isAvoir ? t('editor.newCredit') : t('editor.newQuote')) : docLabel(doc, t);
-  const lienLabel = isAvoir ? t('editor.creditOf') : isFacture && doc.avoirId ? t('editor.correctedBy') : isFacture ? t('editor.fromQuote') : t('editor.convertedTo');
+  const lienLabel = isAvoir ? t('editor.creditOf') : isFacture && doc.avoirId ? t('editor.correctedBy') : isFacture && doc.acompte ? t('editor.depositOn') : isFacture ? t('editor.fromQuote') : t('editor.convertedTo');
 
   return (
     <>
@@ -330,10 +340,26 @@ export default function DocumentEditor() {
           </span>
         }
         subtitle={
-          linked && (
+          (linked || acomptes.length > 0) && (
             <>
-              {lienLabel} <Link to={`/documents/${linked.id}`}>{docLabel(linked, t)}</Link>
-              {isAvoir && linked.dateEmission && <> ({fmtDate(linked.dateEmission)})</>}
+              {linked && (
+                <>
+                  {lienLabel} <Link to={`/documents/${linked.id}`}>{docLabel(linked, t)}</Link>
+                  {isAvoir && linked.dateEmission && <> ({fmtDate(linked.dateEmission)})</>}
+                </>
+              )}
+              {acomptes.length > 0 && (
+                <span className="acomptes">
+                  {linked && ' · '}
+                  {t('editor.depositsIssued')}{' '}
+                  {acomptes.map((a, i) => (
+                    <span key={a.id}>
+                      {i > 0 && ', '}
+                      <Link to={`/documents/${a.id}`}>{a.numero || t('status.draft')}</Link> ({fmtMoney(a.totalTTC)})
+                    </span>
+                  ))}
+                </span>
+              )}
             </>
           )
         }
@@ -367,6 +393,11 @@ export default function DocumentEditor() {
                 <Icon name="wallet" /> {t('editor.recordRefund')}
               </button>
             )}
+            {locked && doc.type === 'devis' && (doc.statut === 'envoye' || doc.statut === 'accepte') && !doc.factureId && (
+              <button type="button" className="btn" onClick={() => setAcompteModal(true)} disabled={busy}>
+                <Icon name="wallet" /> {t('editor.depositInvoice')}
+              </button>
+            )}
             {locked && doc.type === 'devis' && doc.statut === 'envoye' && (
               <>
                 <button type="button" className="btn" onClick={() => void guard(() => onStatut('refuse'))} disabled={busy}>{t('status.refused')}</button>
@@ -384,6 +415,7 @@ export default function DocumentEditor() {
         }
       />
 
+      {acompteModal && <AcompteModal devis={doc} acomptes={acomptes} onClose={() => setAcompteModal(false)} onSubmit={onAcompte} />}
       {error && <div style={{ marginBottom: 14 }}><Notice tone="critical">{error}</Notice></div>}
       {bloque && !locked && !error && (
         <div style={{ marginBottom: 14 }}>
@@ -787,6 +819,38 @@ function PaiementModal({ open, onClose, reste, max, onSubmit, title, intro, mont
           <input type="text" value={libelle} onChange={(e) => setLibelle(e.target.value)} placeholder={t('editor.paymentRefPlaceholder')} />
         </Field>
       </div>
+    </Modal>
+  );
+}
+
+/** Part du devis à facturer en acompte ; les acomptes déjà créés (brouillons compris) sont rappelés et plafonnent la saisie. */
+function AcompteModal({ devis, acomptes, onClose, onSubmit }: { devis: Doc; acomptes: Doc[]; onClose: () => void; onSubmit: (pourcent: number) => Promise<void> }) {
+  const { t } = useI18n();
+  const [pourcent, setPourcent] = useState(30);
+  const [busy, guard] = useGuard();
+  const deja = round2(acomptes.reduce((s, a) => s + a.totalTTC, 0));
+  const montant = round2((devis.totalTTC * pourcent) / 100);
+  const depasse = deja + montant > devis.totalTTC + 0.005;
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t('editor.depositInvoice')}
+      footer={
+        <>
+          <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
+          <button type="button" className="btn primary" disabled={busy || pourcent <= 0 || montant <= 0 || depasse} onClick={() => void guard(() => onSubmit(pourcent))}>
+            <Icon name="check" /> {t('editor.depositCreate')}
+          </button>
+        </>
+      }
+    >
+      <p className="small text-2">{t('editor.depositIntro')}</p>
+      {depasse && <div style={{ marginBottom: 10 }}><Notice tone="warning">{t('editor.depositTooHigh')}</Notice></div>}
+      <Field label={t('editor.depositPercent')} help={t('editor.depositAmount', { montant: fmtMoney(montant), total: fmtMoney(devis.totalTTC) })}>
+        <NumInput value={pourcent} onChange={setPourcent} min={0} />
+      </Field>
+      {deja > 0 && <p className="small text-2">{t('editor.depositAlready', { montant: fmtMoney(deja) })}</p>}
     </Modal>
   );
 }

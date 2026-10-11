@@ -1,8 +1,8 @@
 import { db } from '../db/db';
 import type { Client, ClientSnapshot, Doc, DocType, EmetteurSnapshot, Ligne, MoyenPaiement, Paiement, Profile, Statut } from '../db/types';
-import type { Lang } from '../i18n';
+import { tIn, type Lang } from '../i18n';
 import { addDays, todayISO, yearOf } from './dates';
-import { round2, uid } from './format';
+import { fmtDate, fmtNum, round2, uid } from './format';
 import { finalizationAllowed } from './licenseGate';
 
 export type Tone = 'neutral' | 'info' | 'good' | 'warning' | 'critical';
@@ -285,7 +285,41 @@ export async function dupliquer(doc: Doc, profile: Profile): Promise<number> {
   return saveDoc(copy, profile);
 }
 
-/** Crée une facture (brouillon) à partir d'un devis et relie les deux. */
+/** Factures d'acompte d'un devis, hors annulées ; `emises` écarte aussi les brouillons et celles corrigées par un avoir. */
+export async function acomptesDuDevis(devisId: number, emises = false): Promise<Doc[]> {
+  const factures = await db.documents.where('type').equals('facture').toArray();
+  return factures
+    .filter((d) => d.acompte && d.devisId === devisId && d.statut !== 'annulee' && (!emises || (d.statut !== 'brouillon' && !d.avoirId)))
+    .sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+}
+
+/**
+ * Crée une facture d'acompte (brouillon) pour `pourcent` % d'un devis : une ligne par taux de taxe,
+ * calculée sur la base hors taxe du devis après remise. Le devis passe à « accepté ».
+ */
+export async function acompteDepuisDevis(devis: Doc, pourcent: number, profile: Profile): Promise<number> {
+  const f = newDoc('facture', profile, devis.clientId);
+  const lang = devis.langue || profile.langueDocuments;
+  f.acompte = true;
+  f.objet = devis.objet;
+  f.activite = devis.activite;
+  f.langue = devis.langue;
+  f.devise = devis.devise || profile.devise;
+  f.retenue = devis.retenue;
+  f.devisId = devis.id ?? null;
+  f.bonCommande = devis.bonCommande ?? '';
+  const description = tIn(lang, 'doc.depositLine', { pct: fmtNum(pourcent), numero: devis.numero });
+  f.lignes = ventilationTaxe(devis).map((v) => ({ ...newLigne(v.taux), description, prixUnitaire: round2((v.base * pourcent) / 100) }));
+  if (!f.lignes.length) f.lignes = [{ ...newLigne(profile.tauxTVA), description }];
+  return db.transaction('rw', [db.documents, db.clients], async () => {
+    const id = await saveDoc(f, profile);
+    const courant = devis.id ? await db.documents.get(devis.id) : undefined;
+    if (courant?.statut === 'envoye') await db.documents.update(devis.id!, { statut: 'accepte' });
+    return id;
+  });
+}
+
+/** Crée une facture (brouillon) à partir d'un devis et relie les deux ; les acomptes émis en sont déduits. */
 export async function factureDepuisDevis(devis: Doc, profile: Profile): Promise<number> {
   const f = newDoc('facture', profile, devis.clientId);
   f.objet = devis.objet;
@@ -307,6 +341,19 @@ export async function factureDepuisDevis(devis: Doc, profile: Profile): Promise<
     // Relu dans la transaction : deux clics ne créent pas deux factures pour le même devis.
     const courant = devis.id ? await db.documents.get(devis.id) : undefined;
     if (courant?.factureId && (await db.documents.get(courant.factureId))) return courant.factureId;
+    const acomptes = devis.id ? await acomptesDuDevis(devis.id, true) : [];
+    if (acomptes.length) {
+      // Une remise en pourcentage porterait aussi sur les lignes de déduction : elle est figée en montant.
+      if (f.remiseType === 'pourcent') {
+        f.remise = montantRemise(devis, sousTotal(devis));
+        f.remiseType = 'montant';
+      }
+      const lang = devis.langue || profile.langueDocuments;
+      for (const a of acomptes) {
+        const description = tIn(lang, 'doc.depositDeduction', { numero: a.numero, date: fmtDate(a.dateEmission, lang) });
+        for (const v of ventilationTaxe(a)) f.lignes.push({ ...newLigne(v.taux), description, prixUnitaire: -v.base });
+      }
+    }
     const id = await saveDoc(f, profile);
     if (devis.id) await db.documents.update(devis.id, { factureId: id, statut: 'accepte' });
     return id;
@@ -342,7 +389,8 @@ export async function supprimerDoc(doc: Doc): Promise<void> {
   await db.transaction('rw', [db.documents, db.paiements, db.relances], async () => {
     await db.paiements.where('factureId').equals(doc.id!).delete();
     await db.relances.where('factureId').equals(doc.id!).delete();
-    if (doc.devisId) await db.documents.update(doc.devisId, { factureId: null });
+    // Une facture d'acompte porte aussi `devisId` : seul le devis réellement relié à ce document est délié.
+    if (doc.devisId && (await db.documents.get(doc.devisId))?.factureId === doc.id) await db.documents.update(doc.devisId, { factureId: null });
     if (doc.factureId) await db.documents.update(doc.factureId, { devisId: null });
     if (doc.avoirDe) await db.documents.update(doc.avoirDe, { avoirId: null });
     if (doc.avoirId) await db.documents.update(doc.avoirId, { avoirDe: null });
@@ -434,7 +482,7 @@ export function docTypeKey(type: DocType): string {
 }
 
 export function docLabel(doc: Doc, tt: (key: string) => string): string {
-  const base = tt(docTypeKey(doc.type));
+  const base = tt(doc.type === 'facture' && doc.acompte ? 'doc.depositInvoice' : docTypeKey(doc.type));
   return doc.numero ? `${base} ${doc.numero}` : `${base} (${tt('status.draft').toLowerCase()})`;
 }
 

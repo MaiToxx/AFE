@@ -173,7 +173,7 @@ export default function Documents() {
                       const nbRel = nbRelances.get(d.id ?? 0) ?? 0;
                       return (
                         <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
-                          <td className="tnum"><b>{d.numero || <span className="muted">{t('status.draft')}</span>}</b></td>
+                          <td className="tnum"><b>{d.numero || <span className="muted">{t('status.draft')}</span>}</b>{d.acompte && <span className="tag">{t('docs.deposit')}</span>}</td>
                           <td className="tnum">{fmtDate(d.dateEmission)}</td>
                           <td>{clientName(d)}</td>
                           <td className="text-2 ellipsis" title={d.objet}>{d.objet || <span className="muted">—</span>}</td>
