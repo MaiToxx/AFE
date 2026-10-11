@@ -26,8 +26,8 @@ for (const f of files) for (const m of read(f).matchAll(literal)) used.add(m[1])
 ['freq.mensuelle', 'freq.trimestrielle', 'freq.annuelle', 'period.quarter.1', 'period.quarter.2', 'period.quarter.3', 'period.quarter.4',
   'bareme.type.pct_ca', 'bareme.type.pct_net', 'bareme.type.fixe_mois', 'bareme.type.tranches_mois', 'bareme.type.tranches_annuel',
   'bareme.cat.social', 'bareme.cat.impot', 'bareme.cat.autre', 'bareme.group.vente', 'bareme.group.services', 'cotis.base.ca', 'cotis.base.net', 'cotis.base.remuneration', 'cotis.base.resultat'].forEach((k) => used.add(k));
-// Faux positifs : noms de fichiers ou de réglages qui ressemblent à des clés.
-['licence.key'].forEach((k) => used.delete(k));
+// Faux positifs : noms de fichiers, de réglages ou codes d'erreur internes qui ressemblent à des clés.
+['licence.key', 'licence.required', 'backup.newer'].forEach((k) => used.delete(k));
 
 const entries = (lang) => Object.fromEntries([...read(path.join(src, 'i18n', `${lang}.ts`)).matchAll(/^\s*'([^']+)':\s'((?:[^'\\]|\\.)*)'/gm)].map((m) => [m[1], m[2]]));
 const langs = [...read(path.join(src, 'i18n', 'index.tsx')).matchAll(/^import (\w+) from '\.\/(\w+)';/gm)].map((m) => m[2]);

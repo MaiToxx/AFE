@@ -1,6 +1,7 @@
 // Registre des dépenses : coût réel d'une dépense, totaux par période et par catégorie, export CSV.
 import { CATEGORIES_DEPENSE, MOYENS, type CategorieDepense, type Depense } from '../db/types';
 import { t } from '../i18n';
+import { csvFile, csvNumber, csvText } from './csv';
 import { monthOf, yearOf } from './dates';
 import { fmtDate, round2 } from './format';
 
@@ -77,24 +78,20 @@ export function categorieKey(c: CategorieDepense): string {
 
 /** CSV lisible par Excel (séparateur « ; », BOM UTF-8). */
 export function depensesCSV(rows: Depense[]): string {
-  const esc = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
-  const num = (n: number) => n.toFixed(2).replace('.', ',');
-  const head = [t('ledger.date'), t('exp.label'), t('exp.supplier'), t('exp.category'), t('exp.excl'), `${t('exp.tax')} (%)`, t('exp.tax'), t('exp.incl'), t('exp.taxRecovered'), t('exp.deductible'), t('ledger.method'), t('exp.reference')];
-  const lines = rows.map((d) =>
-    [
-      fmtDate(d.date),
-      d.libelle,
-      d.fournisseur,
-      t(categorieKey(d.categorie)),
-      num(d.montantHT),
-      num(d.tauxTVA),
-      num(d.montantTVA),
-      num(d.montantTTC),
-      d.tvaDeductible ? t('common.yes') : t('common.no'),
-      d.deductible ? t('common.yes') : t('common.no'),
-      t(MOYENS.find((m) => m.value === d.moyen)?.key ?? 'moyen.autre'),
-      d.reference,
-    ].map(esc).join(';'),
-  );
-  return '﻿' + [head.map(esc).join(';'), ...lines].join('\r\n') + '\r\n';
+  const head = [t('ledger.date'), t('exp.label'), t('exp.supplier'), t('exp.category'), t('exp.excl'), `${t('exp.tax')} (%)`, t('exp.tax'), t('exp.incl'), t('exp.taxRecovered'), t('exp.deductible'), t('ledger.method'), t('exp.reference')].map(csvText);
+  const lines = rows.map((d) => [
+    csvText(fmtDate(d.date)),
+    csvText(d.libelle),
+    csvText(d.fournisseur),
+    csvText(t(categorieKey(d.categorie))),
+    csvNumber(d.montantHT),
+    csvNumber(d.tauxTVA),
+    csvNumber(d.montantTVA),
+    csvNumber(d.montantTTC),
+    csvText(d.tvaDeductible ? t('common.yes') : t('common.no')),
+    csvText(d.deductible ? t('common.yes') : t('common.no')),
+    csvText(t(MOYENS.find((m) => m.value === d.moyen)?.key ?? 'moyen.autre')),
+    csvText(d.reference),
+  ]);
+  return csvFile([head, ...lines]);
 }

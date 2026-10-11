@@ -110,6 +110,33 @@ export interface ClientSnapshot {
   siret: string;
 }
 
+/**
+ * Émetteur tel qu'il était à la finalisation d'un document. Un document émis doit rester identique :
+ * il ne suit donc pas les changements ultérieurs du profil (adresse, dénomination, statut, passage à
+ * la TVA, coordonnées bancaires, mentions).
+ */
+export interface EmetteurSnapshot {
+  denomination: string;
+  prenom: string;
+  nom: string;
+  activiteLibelle: string;
+  adresse: string;
+  codePostal: string;
+  ville: string;
+  email: string;
+  telephone: string;
+  siteWeb: string;
+  pays: string;
+  statut: string;
+  nature: Nature;
+  identifiants: Record<string, string>;
+  assujettiTVA: boolean;
+  conditionsPaiement: string;
+  mentionsPied: string;
+  iban: string;
+  bic: string;
+}
+
 export interface Doc {
   id?: number;
   type: DocType;
@@ -118,6 +145,8 @@ export interface Doc {
   statut: Statut;
   clientId: number | null;
   client: ClientSnapshot | null; // figé à la finalisation
+  /** Émetteur figé à la finalisation (absent des documents finalisés avant la version 0.4.3). */
+  emetteur?: EmetteurSnapshot | null;
   objet: string;
   dateEmission: string; // ISO
   dateEcheance: string; // facture : échéance ; devis : fin de validité

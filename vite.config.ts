@@ -6,7 +6,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 export default defineConfig({
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: { __APP_VERSION__: JSON.stringify(pkg.version), __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)) },
   // Port fixe : Tauri (src-tauri/tauri.conf.json → devUrl) s'y connecte en développement.
   // `src-tauri/` est exclu du watcher : cargo y écrit des fichiers verrouillés pendant la compilation.
   server: { port: 5173, strictPort: true, watch: { ignored: ['**/src-tauri/**'] } },

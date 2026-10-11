@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { Doc, FrequenceRecurrence } from '../db/types';
 import { useI18n } from '../i18n';
+import { isValidISO } from '../lib/dates';
 import { FREQUENCES, creerRecurrence, prochaineDate } from '../lib/recurrences';
+import { useGuard } from '../lib/useGuard';
 import { Check, Field, Icon, Modal } from './ui';
 
 /** Transforme une facture en modèle récurrent. */
@@ -12,6 +14,7 @@ export default function RecurrenceModal({ open, onClose, doc, onCreated }: { ope
   const [prochaine, setProchaine] = useState('');
   const [finaliserAuto, setFinaliserAuto] = useState(false);
   const [error, setError] = useState('');
+  const [busy, guard] = useGuard();
 
   useEffect(() => {
     if (open) {
@@ -28,7 +31,7 @@ export default function RecurrenceModal({ open, onClose, doc, onCreated }: { ope
       setError(t('recurrence.needClient'));
       return;
     }
-    if (!prochaine) {
+    if (!isValidISO(prochaine)) {
       setError(t('recurrence.needDate'));
       return;
     }
@@ -45,7 +48,7 @@ export default function RecurrenceModal({ open, onClose, doc, onCreated }: { ope
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="button" className="btn primary" onClick={creer}><Icon name="check" /> {t('recurrence.create')}</button>
+          <button type="button" className="btn primary" onClick={() => void guard(creer)} disabled={busy}><Icon name="check" /> {t('recurrence.create')}</button>
         </>
       }
     >

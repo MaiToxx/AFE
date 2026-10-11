@@ -3,8 +3,19 @@
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+const FORMATS: Record<string, { nom: string; mime: string }> = {
+  json: { nom: 'JSON', mime: 'application/json' },
+  csv: { nom: 'CSV', mime: 'text/csv;charset=utf-8' },
+};
+
+/** Format d'un fichier d'après son extension (JSON par défaut). */
+function formatDe(filename: string): { extension: string; nom: string; mime: string } {
+  const extension = filename.split('.').pop()?.toLowerCase() ?? '';
+  return FORMATS[extension] ? { extension, ...FORMATS[extension] } : { extension: 'json', ...FORMATS.json };
+}
+
 /** Téléchargement classique via le navigateur. */
-export function downloadText(filename: string, text: string, type = 'application/json') {
+export function downloadText(filename: string, text: string, type = formatDe(filename).mime) {
   const blob = new Blob([text], { type });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -27,9 +38,11 @@ export async function saveTextFile(filename: string, text: string): Promise<bool
   }
   const { save } = await import('@tauri-apps/plugin-dialog');
   const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+  // Le filtre suit l'extension : un export CSV n'est pas proposé comme un fichier JSON.
+  const format = formatDe(filename);
   const path = await save({
     defaultPath: filename,
-    filters: [{ name: 'Sauvegarde AFE (JSON)', extensions: ['json'] }],
+    filters: [{ name: format.nom, extensions: [format.extension] }],
   });
   if (!path) return false;
   await writeTextFile(path, text);

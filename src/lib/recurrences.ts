@@ -35,8 +35,12 @@ export async function creerRecurrence(
   });
 }
 
-/** Génère la facture d'une occurrence et avance la prochaine date. */
-export async function genererOccurrence(rec: Recurrence, profile: Profile): Promise<number> {
+/**
+ * Génère la facture d'une occurrence et avance la prochaine date, d'un seul tenant. Renvoie
+ * l'identifiant de la facture, ou null si cette occurrence a déjà été générée entre-temps (deuxième
+ * fenêtre, double clic) : la date du modèle est relue dans la transaction avant toute création.
+ */
+export async function genererOccurrence(rec: Recurrence, profile: Profile): Promise<number | null> {
   const f = newDoc('facture', profile, rec.clientId);
   f.objet = rec.objet;
   f.activite = rec.activite;
@@ -46,15 +50,20 @@ export async function genererOccurrence(rec: Recurrence, profile: Profile): Prom
   f.dateEmission = rec.prochaine;
   f.dateEcheance = addDays(rec.prochaine, profile.delaiPaiementJours || 30);
   f.recurrenceId = rec.id ?? null;
-  const id = await saveDoc(f, profile);
-  if (rec.finaliserAuto && rec.clientId) {
+  const id = await db.transaction('rw', [db.recurrences, db.documents, db.clients], async () => {
+    const courant = await db.recurrences.get(rec.id!);
+    if (!courant || courant.prochaine !== rec.prochaine) return null;
+    const cree = await saveDoc(f, profile);
+    await db.recurrences.update(rec.id!, { prochaine: prochaineDate(rec.prochaine, rec.frequence) });
+    return cree;
+  });
+  if (id !== null && rec.finaliserAuto && rec.clientId) {
     try {
       await finaliser({ ...f, id }, profile);
     } catch {
-      /* client supprimé ou document incomplet : la facture reste en brouillon */
+      /* licence absente, client supprimé ou document incomplet : la facture reste en brouillon */
     }
   }
-  await db.recurrences.update(rec.id!, { prochaine: prochaineDate(rec.prochaine, rec.frequence) });
   return id;
 }
 
@@ -66,7 +75,7 @@ export async function genererRecurrences(profile: Profile, today = todayISO()): 
     let courant = rec;
     // Garde-fou : au plus 24 occurrences de rattrapage par modèle.
     for (let i = 0; i < 24 && courant.prochaine <= today; i++) {
-      await genererOccurrence(courant, profile);
+      if ((await genererOccurrence(courant, profile)) === null) break;
       n++;
       courant = { ...courant, prochaine: prochaineDate(courant.prochaine, courant.frequence) };
     }

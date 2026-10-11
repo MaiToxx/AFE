@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import { DEFAULT_BAREMES, baremeEqualsDefault } from '../lib/bareme';
 import { todayISO } from '../lib/dates';
 import { LOCAL_SETTINGS } from '../lib/revocations';
-import { decodeTrialMark, readTrialMarks, syncTrialMarks, trialStartFrom } from '../lib/trial';
+import { SETTING_TRIAL_SEEN, decodeTrialMark, isTrialDate, readTrialMarks, syncTrialMarks, trialStartFrom } from '../lib/trial';
 import { convertBaremeFR } from '../regimes/migrate';
 import type { Client, Depense, Doc, LegacyBareme, Paiement, Prestation, Profile, Recurrence, RegimeParamsRow, Relance, Setting } from './types';
 
@@ -137,14 +137,34 @@ export async function ensureTrialStart(): Promise<void> {
     const stored = (await db.settings.get('trialStart'))?.value;
     start = trialStartFrom([stored, ...marks.map(decodeTrialMark)], today);
     if (start !== stored) await db.settings.put({ key: 'trialStart', value: start });
+    // Plus haute date observée : reculer l'horloge de l'ordinateur ne rallonge pas l'essai.
+    const seen = (await db.settings.get(SETTING_TRIAL_SEEN))?.value;
+    if (!isTrialDate(seen) || seen < today) await db.settings.put({ key: SETTING_TRIAL_SEEN, value: today });
   });
   await syncTrialMarks(start, marks);
+}
+
+/**
+ * Écarte d'un profil ce qui ne doit jamais venir d'un fichier extérieur : un logo qui ne serait pas une
+ * image embarquée (une adresse distante serait chargée à chaque affichage d'un document) et une
+ * couleur qui ne serait pas un code hexadécimal.
+ */
+export function sanitizeProfile<T extends Partial<Profile>>(p: T): T {
+  const out = { ...p };
+  if (out.logo !== undefined && out.logo !== '' && !/^data:image\/[a-z0-9.+-]+(;[a-z0-9=._-]+)*,/i.test(String(out.logo))) out.logo = '';
+  if (out.couleur !== undefined && !/^#[0-9a-f]{3,8}$/i.test(String(out.couleur))) out.couleur = DEFAULT_PROFILE.couleur;
+  return out;
 }
 
 export async function saveProfile(patch: Partial<Profile>): Promise<void> {
   const current = (await db.profile.get(1)) ?? DEFAULT_PROFILE;
   await db.profile.put({ ...DEFAULT_PROFILE, ...current, ...patch, id: 1 });
 }
+
+/** Version du format de sauvegarde écrit par cette application. */
+const BACKUP_VERSION = 3;
+/** Réglages propres à cette installation : ni écrits dans une sauvegarde, ni repris d'une sauvegarde. */
+const INSTALLATION_SETTINGS: readonly string[] = [...LOCAL_SETTINGS, SETTING_TRIAL_SEEN, 'lastAutoBackup'];
 
 export interface Backup {
   app: 'afe';
@@ -180,14 +200,14 @@ export async function exportBackup(): Promise<Backup> {
   ]);
   return {
     app: 'afe',
-    version: 3,
+    version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     profile: profile ?? null,
     clients,
     documents,
     paiements,
     regimeParams,
-    settings,
+    settings: settings.filter((s) => !INSTALLATION_SETTINGS.includes(s.key)),
     catalogue,
     relances,
     recurrences,
@@ -197,17 +217,46 @@ export async function exportBackup(): Promise<Backup> {
 
 const DATA_TABLES = () => [db.profile, db.clients, db.documents, db.paiements, db.regimeParams, db.catalogue, db.relances, db.recurrences, db.depenses];
 
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+
+/** Table d'une sauvegarde : absente (anciennes versions) ou liste d'enregistrements, rien d'autre. */
+function rows<T>(x: unknown): T[] {
+  if (x === undefined || x === null) return [];
+  if (!Array.isArray(x) || !x.every(isRecord)) throw new Error('backup.invalid');
+  return x as T[];
+}
+
+/**
+ * Remplace les données par celles d'une sauvegarde. Le fichier est contrôlé avant toute écriture, et
+ * l'import se fait en une seule transaction : en cas d'erreur, les données en place sont conservées.
+ */
 export async function importBackup(text: string): Promise<void> {
-  const data = JSON.parse(text) as Partial<Backup>;
-  const clients = data.clients;
-  const documents = data.documents;
-  if (data.app !== 'afe' || !Array.isArray(documents) || !Array.isArray(clients)) {
+  let data: Partial<Backup>;
+  try {
+    data = JSON.parse(text) as Partial<Backup>;
+  } catch {
     throw new Error('backup.invalid');
   }
+  if (!isRecord(data) || data.app !== 'afe' || !Array.isArray(data.documents) || !Array.isArray(data.clients)) throw new Error('backup.invalid');
+  // Sauvegarde d'une version plus récente de l'application : son format n'est peut-être plus le même.
+  if (typeof data.version === 'number' && data.version > BACKUP_VERSION) throw new Error('backup.newer');
+  if (data.profile !== undefined && data.profile !== null && !isRecord(data.profile)) throw new Error('backup.invalid');
+  const clients = rows<Client>(data.clients);
+  const documents = rows<Doc>(data.documents);
+  if (!documents.every((d) => ['devis', 'facture', 'avoir'].includes(d.type) && Array.isArray(d.lignes) && d.lignes.every(isRecord) && typeof d.dateEmission === 'string')) {
+    throw new Error('backup.invalid');
+  }
+  const paiements = rows<Paiement>(data.paiements);
+  const catalogue = rows<Prestation>(data.catalogue);
+  const relances = rows<Relance>(data.relances);
+  const recurrences = rows<Recurrence>(data.recurrences);
+  const depenses = rows<Depense>(data.depenses);
+  const regimeParams = rows<RegimeParamsRow>(data.regimeParams);
+  const settings = rows<Setting>(data.settings).filter((s) => typeof s.key === 'string' && typeof s.value === 'string');
   await db.transaction('rw', [...DATA_TABLES(), db.settings], async () => {
     await Promise.all(DATA_TABLES().map((t) => t.clear()));
     if (data.profile) {
-      const p = data.profile;
+      const p = sanitizeProfile(data.profile);
       await db.profile.put({
         ...DEFAULT_PROFILE,
         ...p,
@@ -218,22 +267,22 @@ export async function importBackup(text: string): Promise<void> {
     }
     await db.clients.bulkAdd(clients);
     await db.documents.bulkAdd(documents);
-    await db.paiements.bulkAdd(data.paiements ?? []);
-    if (data.regimeParams?.length) await db.regimeParams.bulkPut(data.regimeParams);
+    await db.paiements.bulkAdd(paiements);
+    if (regimeParams.length) await db.regimeParams.bulkPut(regimeParams);
     else if (data.baremes?.length) {
       for (const b of data.baremes) {
         if (!baremeEqualsDefault(b)) await db.regimeParams.put({ cle: `FR:${b.annee}`, pays: 'FR', annee: b.annee, params: convertBaremeFR(b) });
       }
     }
-    await db.catalogue.bulkAdd(data.catalogue ?? []);
-    await db.relances.bulkAdd(data.relances ?? []);
-    await db.recurrences.bulkAdd(data.recurrences ?? []);
-    await db.depenses.bulkAdd(data.depenses ?? []);
+    await db.catalogue.bulkAdd(catalogue);
+    await db.relances.bulkAdd(relances);
+    await db.recurrences.bulkAdd(recurrences);
+    await db.depenses.bulkAdd(depenses);
     // Les réglages locaux sont conservés ; ceux de la sauvegarde (licence) viennent par-dessus.
     // La vérification en ligne de la licence reste celle de cette installation, pas celle de la sauvegarde.
     // Le début de la période d'essai fait exception : une sauvegarde ne peut pas le repousser.
     const trial = (await db.settings.get('trialStart'))?.value;
-    if (data.settings?.length) await db.settings.bulkPut(data.settings.filter((s) => s.key !== 'langue' && !LOCAL_SETTINGS.includes(s.key)));
+    if (settings.length) await db.settings.bulkPut(settings.filter((s) => s.key !== 'langue' && !INSTALLATION_SETTINGS.includes(s.key)));
     const imported = (await db.settings.get('trialStart'))?.value;
     const start = trialStartFrom([trial, imported], todayISO());
     if (start !== imported) await db.settings.put({ key: 'trialStart', value: start });

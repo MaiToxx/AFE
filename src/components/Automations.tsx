@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { ensureTrialStart } from '../db/db';
 import { useProfile } from '../db/hooks';
 import { sauvegardeAutomatique } from '../lib/autoBackup';
 import { isTauri } from '../lib/desktop';
@@ -25,6 +26,8 @@ export default function Automations() {
     if (!loaded || done.current) return;
     done.current = true;
     (async () => {
+      // Demande au navigateur de ne pas évincer la base locale quand le disque se remplit.
+      void navigator.storage?.persist?.().catch(() => undefined);
       await restaurerCleDepuisFichier();
       // Toujours consultée à l'ouverture : une révocation s'applique dès le lancement suivant.
       void refreshRevocationsIfLicensed(true);
@@ -35,15 +38,20 @@ export default function Automations() {
   }, [loaded, profile]);
   useEffect(() => {
     if (!isTauri) return;
+    // En cours de session, le fichier du jour n'est réécrit que si des données ont changé.
     const id = setInterval(() => {
-      sauvegardeAutomatique(profileRef.current, true).catch((e) => console.error('Sauvegarde automatique :', e));
+      sauvegardeAutomatique(profileRef.current, true, true).catch((e) => console.error('Sauvegarde automatique :', e));
     }, INTERVALLE_SAUVEGARDE);
     return () => clearInterval(id);
   }, []);
   useEffect(() => {
     // Liste des licences révoquées : revérifiée régulièrement et dès le retour de la connexion.
     const verifier = () => void refreshRevocationsIfLicensed();
-    const id = setInterval(verifier, INTERVALLE_REVOCATIONS);
+    // L'application peut rester ouverte plusieurs jours : la date observée pour l'essai suit.
+    const id = setInterval(() => {
+      verifier();
+      void ensureTrialStart().catch(() => undefined);
+    }, INTERVALLE_REVOCATIONS);
     window.addEventListener('online', verifier);
     return () => {
       clearInterval(id);

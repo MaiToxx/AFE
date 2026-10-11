@@ -49,12 +49,12 @@ async function cachedList(json: string): Promise<RevocationList | null> {
 }
 
 /** Révocations à appliquer : la plus récente de la liste embarquée et de la liste en cache. */
-export async function revocationView(cachedJson: string, checkedAt: string): Promise<RevocationView & { checkedAt: string | null }> {
+export async function revocationView(cachedJson: string, checkedAt: string): Promise<RevocationView & { checkedAt: string | null; listIssued: string }> {
   const list = newerList(EMBEDDED, await cachedList(cachedJson));
   const t = Date.parse(checkedAt);
   // Une date de vérification située dans le futur (horloge déréglée, valeur modifiée) n'est pas retenue.
   const valid = Number.isFinite(t) && t <= Date.now() + 86_400_000;
-  return { ids: list.ids, checkedAt: valid ? checkedAt : null };
+  return { ids: list.ids, checkedAt: valid ? checkedAt : null, listIssued: list.issued };
 }
 
 export type RefreshResult =

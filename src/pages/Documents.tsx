@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import RecurrencesList from '../components/RecurrencesList';
 import { Badge, Empty, Icon, PageHeader } from '../components/ui';
@@ -6,8 +6,9 @@ import { useClients, useDocuments, usePaiements, useRelances } from '../db/hooks
 import type { Doc, DocType } from '../db/types';
 import { useI18n } from '../i18n';
 import { todayISO } from '../lib/dates';
-import { montantPaye, statutInfo, supprimerDoc } from '../lib/documents';
-import { fmtDate, fmtMoney } from '../lib/format';
+import { statutInfo, supprimerDoc } from '../lib/documents';
+import { fmtDate, fmtMoney, round2 } from '../lib/format';
+import { encaisseParFacture } from '../lib/stats';
 
 const STATUTS: Record<DocType, { value: string; key: string }[]> = {
   facture: [
@@ -50,13 +51,22 @@ export default function Documents() {
   const clients = useClients();
   const relances = useRelances();
   const [q, setQ] = useState('');
+  // La liste suit la saisie avec un léger différé : la frappe reste fluide même avec beaucoup de documents.
+  const recherche = useDeferredValue(q);
   const [statut, setStatut] = useState('tous');
   const today = todayISO();
 
-  const clientName = (d: Doc) => d.client?.nom ?? clients.find((c) => c.id === d.clientId)?.nom ?? '—';
+  const nomsClients = useMemo(() => new Map(clients.map((c) => [c.id, c.nom])), [clients]);
+  const encaisse = useMemo(() => encaisseParFacture(paiements), [paiements]);
+  const nbRelances = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const r of relances) m.set(r.factureId, (m.get(r.factureId) ?? 0) + 1);
+    return m;
+  }, [relances]);
+  const clientName = (d: Doc) => d.client?.nom ?? nomsClients.get(d.clientId ?? undefined) ?? '—';
 
   const list = useMemo(() => {
-    const s = q.trim().toLowerCase();
+    const s = recherche.trim().toLowerCase();
     return docs
       .filter((d) => d.type === type)
       .filter((d) => {
@@ -64,10 +74,10 @@ export default function Documents() {
         if (statut === 'retard') return d.statut === 'envoyee' && d.dateEcheance < today;
         return d.statut === statut;
       })
-      .filter((d) => !s || [d.numero, d.objet, clientName(d)].some((v) => v.toLowerCase().includes(s)))
+      .filter((d) => !s || [d.numero, d.objet, clientName(d)].some((v) => (v ?? '').toLowerCase().includes(s)))
       .sort((a, b) => b.dateEmission.localeCompare(a.dateEmission) || b.numeroSeq - a.numeroSeq || (b.id ?? 0) - (a.id ?? 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docs, type, statut, q, clients, today]);
+  }, [docs, type, statut, recherche, nomsClients, today]);
 
   const total = list.reduce((s, d) => s + (d.statut === 'annulee' ? 0 : d.totalTTC), 0);
 
@@ -144,9 +154,9 @@ export default function Documents() {
                   </thead>
                   <tbody>
                     {list.map((d) => {
-                      const paye = montantPaye(d, paiements);
+                      const paye = round2(encaisse.get(d.id ?? 0) ?? 0);
                       const st = statutInfo(d, paye, today);
-                      const nbRel = relances.filter((r) => r.factureId === d.id).length;
+                      const nbRel = nbRelances.get(d.id ?? 0) ?? 0;
                       return (
                         <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
                           <td className="tnum"><b>{d.numero || <span className="muted">{t('status.draft')}</span>}</b></td>

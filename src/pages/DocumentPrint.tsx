@@ -6,9 +6,9 @@ import { db } from '../db/db';
 import { useClients, usePaiements, useProfile, useRegime } from '../db/hooks';
 import type { ClientSnapshot } from '../db/types';
 import { tIn, useI18n, type Lang } from '../i18n';
-import { ligneTotalHT, montantPaye, normalizeDoc } from '../lib/documents';
+import { ligneTotalHT, montantPaye, normalizeDoc, profilDuDocument } from '../lib/documents';
 import { fmtDate, fmtMoneyIn, fmtNum } from '../lib/format';
-import { L, identifiantPrincipal, identifiantsPied, localeFor } from '../regimes';
+import { L, getRegime, identifiantPrincipal, identifiantsPied, localeFor } from '../regimes';
 import { groupeOf } from '../regimes/engine';
 
 export default function DocumentPrint() {
@@ -18,8 +18,13 @@ export default function DocumentPrint() {
   const { t } = useI18n();
   const raw = useLiveQuery(() => db.documents.get(Number(id)), [id]);
   const doc = raw ? normalizeDoc(raw) : raw;
-  const { profile, loaded } = useProfile();
-  const regime = useRegime();
+  const { profile: profilActuel, loaded } = useProfile();
+  const regimeActuel = useRegime();
+  // Un document émis s'imprime avec l'émetteur de sa finalisation : identité, adresse, identifiants,
+  // régime de taxe et mentions ne suivent pas les changements ultérieurs du profil. Seule la mise en
+  // forme (logo, couleur, thème) reste celle du profil courant.
+  const profile = doc ? profilDuDocument(doc, profilActuel) : profilActuel;
+  const regime = doc && doc.statut !== 'brouillon' && doc.emetteur ? getRegime(doc.emetteur.pays, doc.emetteur.statut) : regimeActuel;
   const clients = useClients();
   const paiements = usePaiements();
   const printed = useRef(false);

@@ -5,15 +5,34 @@ import { monthOf, yearOf } from './dates';
 import { depensesDeductibles } from './depenses';
 
 /**
- * Montant HT d'un encaissement : un paiement sur facture est ramené au prorata HT/TTC
- * de la facture ; un encaissement libre est saisi HT.
+ * Montant qui solde une facture : son net à payer, c'est-à-dire le TTC moins la retenue à la source
+ * que le client professionnel verse lui-même à l'administration. C'est le dénominateur des proratas :
+ * une facture entièrement réglée compte pour tout son HT et toute sa taxe, même si le client n'en a
+ * versé qu'une partie.
+ */
+export function montantSoldant(d: Pick<Doc, 'totalTTC' | 'netAPayer'>): number {
+  return d.netAPayer > 0 && d.netAPayer < d.totalTTC ? d.netAPayer : d.totalTTC;
+}
+
+/**
+ * Montant HT d'un encaissement : un paiement sur facture est ramené au prorata du HT dans le montant
+ * qui solde la facture ; un encaissement libre est saisi HT.
  */
 export function caHT(p: Paiement, docsById: Map<number, Doc>): number {
   if (p.factureId) {
     const d = docsById.get(p.factureId);
-    if (d && d.totalTTC > 0) return (p.montant * d.totalHT) / d.totalTTC;
+    if (d && d.totalTTC > 0) return (p.montant * d.totalHT) / montantSoldant(d);
   }
   return p.montant;
+}
+
+/** Total encaissé par facture (identifiant → montant), pour éviter de reparcourir les paiements à chaque ligne. */
+export function encaisseParFacture(paiements: Paiement[]): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const p of paiements) {
+    if (p.factureId) out.set(p.factureId, (out.get(p.factureId) ?? 0) + p.montant);
+  }
+  return out;
 }
 
 export function encaissementsParMois(paiements: Paiement[], docsById: Map<number, Doc>, annee: number): number[] {

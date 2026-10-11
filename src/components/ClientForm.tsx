@@ -3,6 +3,7 @@ import { db } from '../db/db';
 import { useRegime } from '../db/hooks';
 import type { Client } from '../db/types';
 import { useI18n } from '../i18n';
+import { useGuard } from '../lib/useGuard';
 import { L } from '../regimes';
 import { Field, Modal, Seg } from './ui';
 
@@ -29,6 +30,7 @@ export default function ClientForm({ open, client, onClose, onSaved }: {
   const regime = useRegime();
   const [form, setForm] = useState<Omit<Client, 'id' | 'createdAt'>>(EMPTY);
   const [error, setError] = useState('');
+  const [busy, guard] = useGuard();
 
   useEffect(() => {
     if (open) {
@@ -46,10 +48,10 @@ export default function ClientForm({ open, client, onClose, onSaved }: {
     }
     let id: number;
     if (client?.id) {
-      await db.clients.update(client.id, { ...form });
+      await db.clients.update(client.id, { ...form, nom: form.nom.trim() });
       id = client.id;
     } else {
-      id = await db.clients.add({ ...form, createdAt: new Date().toISOString() });
+      id = await db.clients.add({ ...form, nom: form.nom.trim(), createdAt: new Date().toISOString() });
     }
     onSaved?.(id);
     onClose();
@@ -63,7 +65,7 @@ export default function ClientForm({ open, client, onClose, onSaved }: {
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="button" className="btn primary" onClick={save}>{t('common.save')}</button>
+          <button type="button" className="btn primary" onClick={() => void guard(save)} disabled={busy}>{t('common.save')}</button>
         </>
       }
     >

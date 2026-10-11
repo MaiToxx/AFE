@@ -6,6 +6,7 @@ import { todayISO } from '../lib/dates';
 import { openExternal } from '../lib/desktop';
 import { fmtDate, fmtMoney } from '../lib/format';
 import { enregistrerRelance, relanceMailto } from '../lib/relances';
+import { useGuard } from '../lib/useGuard';
 import { Field, Icon, Modal } from './ui';
 
 export const CANAUX: { value: CanalRelance; key: string }[] = [
@@ -29,6 +30,7 @@ export default function RelanceModal({ open, onClose, doc, profile, reste, relan
   const [canal, setCanal] = useState<CanalRelance>('email');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayISO());
+  const [busy, guard] = useGuard();
   useEffect(() => {
     if (open) {
       setCanal(doc.client?.email ? 'email' : 'telephone');
@@ -54,9 +56,9 @@ export default function RelanceModal({ open, onClose, doc, profile, reste, relan
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="button" className="btn" onClick={() => enregistrer(false)}>{t('relance.save')}</button>
+          <button type="button" className="btn" onClick={() => void guard(() => enregistrer(false))} disabled={busy}>{t('relance.save')}</button>
           {canal === 'email' && (
-            <button type="button" className="btn primary" onClick={() => enregistrer(true)} disabled={!doc.client?.email}>
+            <button type="button" className="btn primary" onClick={() => void guard(() => enregistrer(true))} disabled={busy || !doc.client?.email}>
               <Icon name="file" /> {t('relance.openAndSave')}
             </button>
           )}

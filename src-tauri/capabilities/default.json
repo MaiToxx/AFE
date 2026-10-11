@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions de la fenêtre principale : boîtes de dialogue natives et lecture/écriture des sauvegardes JSON choisies par l'utilisateur.",
+  "description": "Permissions de la fenêtre principale : boîtes de dialogue natives, dossier de données de l'application, et écriture des seuls fichiers que l'utilisateur choisit dans une boîte « Enregistrer sous » (le plugin de dialogue les ajoute au périmètre). Aucun accès général au dossier personnel.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -19,10 +19,6 @@
     "fs:allow-read-dir",
     "fs:allow-remove",
     "fs:allow-exists",
-    "fs:scope-home-recursive",
-    "fs:scope-document-recursive",
-    "fs:scope-download-recursive",
-    "fs:scope-desktop-recursive",
     "fs:scope-appdata-recursive"
   ]
 }

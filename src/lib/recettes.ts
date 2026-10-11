@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { L } from '../regimes';
 import { activiteOf } from '../regimes/engine';
 import type { Regime } from '../regimes/types';
+import { csvFile, csvNumber, csvText } from './csv';
 import { yearOf } from './dates';
 import { fmtDate, round2 } from './format';
 
@@ -42,10 +43,15 @@ export function livreRecettes(annee: number, paiements: Paiement[], docsById: Ma
 
 /** CSV lisible par Excel (séparateur « ; », BOM UTF-8). */
 export function recettesCSV(rows: LigneRecette[], regime: Regime): string {
-  const esc = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
-  const head = [t('ledger.date'), t('ledger.reference'), t('ledger.client'), t('ledger.nature'), t('ledger.activity'), t('ledger.amount'), t('ledger.method')];
-  const lines = rows.map((r) =>
-    [fmtDate(r.date), r.reference, r.client, r.nature, L(activiteOf(regime, r.activite).court), r.montant.toFixed(2).replace('.', ','), r.moyen].map(esc).join(';'),
-  );
-  return '﻿' + [head.map(esc).join(';'), ...lines].join('\r\n') + '\r\n';
+  const head = [t('ledger.date'), t('ledger.reference'), t('ledger.client'), t('ledger.nature'), t('ledger.activity'), t('ledger.amount'), t('ledger.method')].map(csvText);
+  const lines = rows.map((r) => [
+    csvText(fmtDate(r.date)),
+    csvText(r.reference),
+    csvText(r.client),
+    csvText(r.nature),
+    csvText(L(activiteOf(regime, r.activite).court)),
+    csvNumber(r.montant),
+    csvText(r.moyen),
+  ]);
+  return csvFile([head, ...lines]);
 }

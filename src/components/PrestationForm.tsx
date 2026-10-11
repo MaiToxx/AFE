@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { db } from '../db/db';
 import type { Prestation } from '../db/types';
 import { useI18n } from '../i18n';
+import { useGuard } from '../lib/useGuard';
 import { Field, Modal, NumInput } from './ui';
 
 const EMPTY: Omit<Prestation, 'id'> = { libelle: '', description: '', unite: '', prixUnitaire: 0, tauxTVA: 20 };
@@ -11,6 +12,7 @@ export default function PrestationForm({ open, prestation, tauxTVA, onClose }: {
   const { t } = useI18n();
   const [form, setForm] = useState<Omit<Prestation, 'id'>>(EMPTY);
   const [error, setError] = useState('');
+  const [busy, guard] = useGuard();
 
   useEffect(() => {
     if (open) {
@@ -39,7 +41,7 @@ export default function PrestationForm({ open, prestation, tauxTVA, onClose }: {
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="button" className="btn primary" onClick={save}>{t('common.save')}</button>
+          <button type="button" className="btn primary" onClick={() => void guard(save)} disabled={busy}>{t('common.save')}</button>
         </>
       }
     >

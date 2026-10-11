@@ -129,4 +129,6 @@ export interface RevocationView {
   ids: readonly string[];
   /** Dernier contact réussi avec le service (ISO) ; null : jamais ; absent : délai non appliqué. */
   checkedAt?: string | null;
+  /** Date de signature de la liste appliquée (ISO) : repère de date fiable, car signé par le vendeur. */
+  listIssued?: string;
 }

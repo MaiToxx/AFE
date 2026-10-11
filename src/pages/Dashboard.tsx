@@ -8,9 +8,9 @@ import type { Doc } from '../db/types';
 import { colon, useI18n } from '../i18n';
 import { monthOf, parseISO, todayISO, yearOf } from '../lib/dates';
 import { loadDemo } from '../lib/demo';
-import { montantDu, montantPaye, statutInfo } from '../lib/documents';
+import { montantDu, statutInfo } from '../lib/documents';
 import { fmtCompact, fmtDate, fmtMoney, fmtMoney0, moisCourts } from '../lib/format';
-import { caHT, caParActivite, declarations, encaissementsParMois, factureParMois, sum } from '../lib/stats';
+import { caHT, caParActivite, declarations, encaisseParFacture, encaissementsParMois, factureParMois, sum } from '../lib/stats';
 import { L } from '../regimes';
 import { activiteOf, paramsFor, seuilsApplicables } from '../regimes/engine';
 
@@ -67,7 +67,9 @@ export default function Dashboard() {
 
   const factures = docs.filter((d) => d.type === 'facture');
   const attente = factures.filter((d) => d.statut === 'envoyee');
-  const attenteTotal = attente.reduce((s, d) => s + montantDu(d) - montantPaye(d, paiements), 0);
+  const encaisse = useMemo(() => encaisseParFacture(paiements), [paiements]);
+  const nomsClients = useMemo(() => new Map(clients.map((c) => [c.id, c.nom])), [clients]);
+  const attenteTotal = attente.reduce((s, d) => s + montantDu(d) - (encaisse.get(d.id ?? 0) ?? 0), 0);
   const retard = attente.filter((d) => d.dateEcheance < today);
   const devisEnCours = docs.filter((d) => d.type === 'devis' && d.statut === 'envoye');
 
@@ -81,7 +83,7 @@ export default function Dashboard() {
     .sort((a, b) => b.dateEmission.localeCompare(a.dateEmission) || b.numeroSeq - a.numeroSeq)
     .slice(0, 6);
 
-  const clientName = (d: Doc) => d.client?.nom ?? clients.find((c) => c.id === d.clientId)?.nom ?? '—';
+  const clientName = (d: Doc) => d.client?.nom ?? nomsClients.get(d.clientId ?? undefined) ?? '—';
   const chartSeries = [{ name: String(year), color: 'var(--series-1)', values: cur }];
   if (sum(prev) > 0) chartSeries.push({ name: String(year - 1), color: 'var(--series-2)', values: prev });
 
@@ -115,13 +117,13 @@ export default function Dashboard() {
       }
     }
     const arr = [...map.entries()]
-      .map(([cid, ca]) => ({ nom: cid ? clients.find((c) => c.id === cid)?.nom ?? t('dash.deletedClient') : t('dash.noClient'), ca }))
+      .map(([cid, ca]) => ({ nom: cid ? nomsClients.get(cid) ?? t('dash.deletedClient') : t('dash.noClient'), ca }))
       .filter((x) => x.ca > 0)
       .sort((a, b) => b.ca - a.ca);
     const top = arr.slice(0, 5);
     if (arr.length > 5) top.push({ nom: t('dash.others', { n: arr.length - 5 }), ca: arr.slice(5).reduce((s, x) => s + x.ca, 0) });
     return top;
-  }, [mode, paiements, docs, docsById, clients, year, t]);
+  }, [mode, paiements, docs, docsById, nomsClients, year, t]);
 
   const blocked = licence.status === 'trial_over' || licence.status === 'expired' || licence.status === 'unsupported' || licence.status === 'invalid' || licence.status === 'unverified';
 
@@ -340,7 +342,7 @@ export default function Dashboard() {
               <table className="table">
                 <tbody>
                   {recentes.map((d) => {
-                    const st = statutInfo(d, montantPaye(d, paiements), today);
+                    const st = statutInfo(d, encaisse.get(d.id ?? 0) ?? 0, today);
                     return (
                       <tr key={d.id} className="clickable" onClick={() => navigate(`/documents/${d.id}`)}>
                         <td className="tnum small"><b>{d.numero}</b></td>

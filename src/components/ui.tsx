@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { t } from '../i18n';
-import { parseNum } from '../lib/format';
+import { fmtInput, parseNum } from '../lib/format';
 
 const PATHS = {
   dashboard: 'M3 3h7v9H3V3z M14 3h7v5h-7V3z M14 12h7v9h-7v-9z M3 16h7v5H3v-5z',
@@ -152,11 +152,7 @@ export function Modal({ open, onClose, title, children, footer, wide }: { open: 
   );
 }
 
-function fmtInput(n: number): string {
-  return Number.isFinite(n) ? String(n).replace('.', ',') : '';
-}
-
-/** Champ numérique tolérant à la saisie française ("1 200,50"). */
+/** Champ numérique tolérant aux conventions de saisie de chaque pays ("1 200,50", "1,200.50", "1.200,50"). */
 export function NumInput({ value, onChange, className, placeholder, disabled, ariaLabel, min }: {
   value: number;
   onChange: (n: number) => void;

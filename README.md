@@ -116,6 +116,26 @@ Secrets GitHub requis : `TAURI_SIGNING_PRIVATE_KEY` (contenu de `scripts/updater
 releases dédié) doit être **public** pour que les clients puissent télécharger `latest.json`.
 `npm run desktop:build` lit la clé localement via `scripts/desktop-build.mjs`.
 
+## Sécurité et intégrité des données
+
+- **Contenu.** L'application de bureau applique une politique de sécurité du contenu stricte
+  (`src-tauri/tauri.conf.json`) : elle n'exécute que ses propres scripts, n'affiche aucune image
+  distante et ne peut joindre que les deux adresses de la liste des licences révoquées.
+- **Fichiers.** Elle n'accède qu'à son dossier de données et aux fichiers que l'utilisateur choisit
+  dans une boîte « Enregistrer sous » (`src-tauri/capabilities/default.json`).
+- **Une seule instance.** Un second lancement ramène la fenêtre déjà ouverte au premier plan.
+- **Documents émis.** Le numéro est attribué dans une transaction (deux finalisations simultanées
+  ne peuvent ni partager un numéro ni en sauter un), et le document garde l'émetteur de sa
+  finalisation : identité, adresse, identifiants, régime de taxe et mentions ne changent plus quand
+  le profil change.
+- **Sauvegardes.** Un fichier importé est contrôlé avant toute écriture (structure, version) et
+  l'import est atomique : en cas d'erreur, les données en place sont conservées. Si la base est
+  vide alors que des sauvegardes automatiques existent, l'accueil propose de les restaurer.
+- **Exports CSV.** Les cellules de texte qui commencent par `=`, `+`, `-` ou `@` sont neutralisées
+  pour ne pas être exécutées comme des formules par un tableur.
+- **Publication.** Les actions GitHub du flux de release sont figées sur un commit précis : ce flux
+  détient la clé qui signe les mises à jour.
+
 ## Licences (vente du logiciel)
 
 L'application vérifie elle-même, sans serveur, des clés de licence signées (ECDSA P-256) :

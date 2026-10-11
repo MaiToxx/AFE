@@ -1,19 +1,20 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { isLang } from '../i18n';
-import { todayISO } from '../lib/dates';
 import { normalizeDoc } from '../lib/documents';
-import { evaluate, trialStatus, verifyKey, type LicenseStatus } from '../lib/license';
+import type { LicenseStatus } from '../lib/license';
+import { licenseStatusNow } from '../lib/licenseGate';
 import { SETTING_REVOCATIONS, SETTING_REVOCATIONS_CHECKED } from '../lib/revocations';
-import { isCheckSettled, refreshRevocations, revocationView, subscribeCheckSettled } from '../lib/revocationsStore';
+import { isCheckSettled, refreshRevocations, subscribeCheckSettled } from '../lib/revocationsStore';
+import { SETTING_TRIAL_SEEN } from '../lib/trial';
 import { getRegime } from '../regimes';
 import type { Regime, RegimeParams } from '../regimes/types';
-import { DEFAULT_PROFILE, db, getSetting } from './db';
+import { DEFAULT_PROFILE, db, sanitizeProfile } from './db';
 import type { Client, Depense, Doc, Paiement, Prestation, Profile, Recurrence, Relance, Setting } from './types';
 
 /** Complète un profil enregistré avec les valeurs par défaut et les champs migrés. */
 export function normalizeProfile(row: Partial<Profile> | undefined): Profile {
-  const p: Profile = { ...DEFAULT_PROFILE, ...(row ?? {}), id: 1 };
+  const p: Profile = sanitizeProfile({ ...DEFAULT_PROFILE, ...(row ?? {}), id: 1 });
   const identifiants = { ...(p.identifiants ?? {}) };
   if (p.siret && !identifiants.siret) identifiants.siret = p.siret;
   if (p.numeroTVA && !identifiants.tva) identifiants.tva = p.numeroTVA;
@@ -88,28 +89,17 @@ export function useLicense(): LicenseStatus {
   const valeur = (key: string) => settings?.find((s) => s.key === key)?.value ?? '';
   const licenseKey = valeur('licenseKey');
   const trialStart = valeur('trialStart');
+  const trialSeen = valeur(SETTING_TRIAL_SEEN);
   const revocations = valeur(SETTING_REVOCATIONS);
   const checkedAt = valeur(SETTING_REVOCATIONS_CHECKED);
   const pending = settings === null;
   useEffect(() => {
     if (pending) return;
     let cancelled = false;
-    const today = todayISO();
-    if (!licenseKey) {
-      setState(trialStart ? trialStatus(trialStart, today) : { status: 'loading' });
-      return;
-    }
     (async () => {
-      const r = await verifyKey(licenseKey);
-      if (cancelled) return;
-      if (!r.ok) {
-        setState({ status: 'invalid', reasonKey: r.reasonKey });
-        return;
-      }
-      // Liste et date de vérification sont relues à l'instant : quand une vérification vient de
-      // s'achever, la requête réactive (qui relance cet effet) peut encore porter les valeurs précédentes.
-      const [liste, verifiee] = await Promise.all([getSetting(SETTING_REVOCATIONS), getSetting(SETTING_REVOCATIONS_CHECKED)]);
-      const status = evaluate(r.payload, today, undefined, await revocationView(liste ?? '', verifiee ?? ''));
+      // Le statut est relu dans le stockage (même calcul que le contrôle fait à la finalisation) : les
+      // réglages ci-dessus ne servent qu'à relancer cet effet quand l'un d'eux change.
+      const status = await licenseStatusNow({ wait: false });
       if (cancelled) return;
       if (status.status === 'unverified' && !checkSettled) {
         // La vérification en ligne du lancement n'a pas encore abouti : on attend son résultat
@@ -121,6 +111,6 @@ export function useLicense(): LicenseStatus {
     return () => {
       cancelled = true;
     };
-  }, [pending, licenseKey, trialStart, revocations, checkedAt, checkSettled]);
+  }, [pending, licenseKey, trialStart, trialSeen, revocations, checkedAt, checkSettled]);
   return state;
 }

@@ -39,6 +39,11 @@ export default function Clients() {
       alert(t('clients.cannotDelete'));
       return;
     }
+    // Un modèle récurrent continuerait de générer des factures pour un client qui n'existe plus.
+    if ((await db.recurrences.toArray()).some((r) => r.clientId === c.id)) {
+      alert(t('clients.usedByRecurrence'));
+      return;
+    }
     if (confirm(t('clients.confirmDelete', { name: c.nom }))) await db.clients.delete(c.id!);
   }
 

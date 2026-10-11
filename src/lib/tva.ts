@@ -3,7 +3,7 @@
 import type { Depense, Doc, Paiement, Profile } from '../db/types';
 import { groupeOf, periodsOfYear, tvaEcheance, tvaFrequence, type Period } from '../regimes/engine';
 import type { Regime } from '../regimes/types';
-import type { EtatDeclaration } from './stats';
+import { montantSoldant, type EtatDeclaration } from './stats';
 
 export interface TvaRow {
   period: Period;
@@ -34,7 +34,7 @@ export function tvaParPeriode(annee: number, docs: Doc[], paiements: Paiement[],
       if (pay.date < p.start || pay.date > p.end || !pay.factureId) continue;
       const d = docsById.get(pay.factureId);
       if (!d || d.totalTVA <= 0 || d.totalTTC <= 0 || groupeOf(regime, d.activite) === 'vente') continue;
-      collectee += (pay.montant * d.totalTVA) / d.totalTTC;
+      collectee += (pay.montant * d.totalTVA) / montantSoldant(d);
     }
     // Biens : taxe exigible à la livraison (date de facture) ; les avoirs viennent en déduction.
     for (const d of docs) {

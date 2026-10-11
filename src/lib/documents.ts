@@ -1,8 +1,9 @@
 import { db } from '../db/db';
-import type { Client, ClientSnapshot, Doc, DocType, Ligne, MoyenPaiement, Paiement, Profile, Statut } from '../db/types';
+import type { Client, ClientSnapshot, Doc, DocType, EmetteurSnapshot, Ligne, MoyenPaiement, Paiement, Profile, Statut } from '../db/types';
 import type { Lang } from '../i18n';
 import { addDays, todayISO, yearOf } from './dates';
 import { round2, uid } from './format';
+import { finalizationAllowed } from './licenseGate';
 
 export type Tone = 'neutral' | 'info' | 'good' | 'warning' | 'critical';
 
@@ -104,6 +105,36 @@ export async function nextSeq(type: DocType, annee: number): Promise<number> {
   return max + 1;
 }
 
+/** Émetteur à figer dans un document au moment où il est émis. */
+export function emetteurSnapshot(p: Profile): EmetteurSnapshot {
+  return {
+    denomination: p.denomination,
+    prenom: p.prenom,
+    nom: p.nom,
+    activiteLibelle: p.activiteLibelle,
+    adresse: p.adresse,
+    codePostal: p.codePostal,
+    ville: p.ville,
+    email: p.email,
+    telephone: p.telephone,
+    siteWeb: p.siteWeb,
+    pays: p.pays,
+    statut: p.statut,
+    nature: p.nature,
+    identifiants: { ...p.identifiants },
+    assujettiTVA: p.assujettiTVA,
+    conditionsPaiement: p.conditionsPaiement,
+    mentionsPied: p.mentionsPied,
+    iban: p.iban,
+    bic: p.bic,
+  };
+}
+
+/** Profil à utiliser pour afficher un document : celui de sa finalisation s'il est émis, le profil courant sinon. */
+export function profilDuDocument(doc: Pick<Doc, 'statut' | 'emetteur'>, profile: Profile): Profile {
+  return doc.statut !== 'brouillon' && doc.emetteur ? { ...profile, ...doc.emetteur } : profile;
+}
+
 export function clientSnapshot(c: Client): ClientSnapshot {
   return { nom: c.nom, type: c.type, adresse: c.adresse, codePostal: c.codePostal, ville: c.ville, pays: c.pays, email: c.email, siret: c.siret };
 }
@@ -116,39 +147,63 @@ async function clientEstPro(doc: Doc): Promise<boolean> {
   return c?.type === 'pro';
 }
 
+/** Enregistre un brouillon (création ou mise à jour) et renvoie son identifiant. */
 export async function saveDoc(doc: Doc, profile: Profile): Promise<number> {
   const pro = await clientEstPro(doc);
   const updated: Doc = { ...doc, ...computeTotals(doc, profile.assujettiTVA, pro), updatedAt: new Date().toISOString() };
-  return db.documents.put(updated);
+  if (!doc.id) return db.documents.put(updated);
+  return db.transaction('rw', db.documents, async () => {
+    const stored = await db.documents.get(doc.id!);
+    // Un brouillon resté ouvert ne doit ni recréer un document supprimé entre-temps, ni écraser un
+    // document finalisé (son numéro et ses montants ne changent plus).
+    if (!stored || stored.statut !== 'brouillon') return doc.id!;
+    return db.documents.put(updated);
+  });
 }
 
-/** Attribue un numéro, fige le client et passe le document en « envoyé ». */
+/**
+ * Attribue un numéro, fige le client et passe le document en « envoyé ».
+ *
+ * La licence est contrôlée ici, pas seulement par les écrans. Le numéro est attribué dans une
+ * transaction qui relit le document : deux finalisations simultanées (double clic, deuxième fenêtre)
+ * ne peuvent ni donner le même numéro à deux documents, ni renuméroter un document déjà finalisé.
+ */
 export async function finaliser(doc: Doc, profile: Profile): Promise<Doc> {
   if (!doc.id) throw new Error('doc.notSaved');
-  if (!doc.clientId) throw new Error('doc.noClient');
-  const client = await db.clients.get(doc.clientId);
-  if (!client) throw new Error('doc.clientMissing');
-  const annee = yearOf(doc.dateEmission);
-  const seq = doc.numeroSeq > 0 ? doc.numeroSeq : await nextSeq(doc.type, annee);
-  const updated: Doc = {
-    ...doc,
-    ...computeTotals(doc, profile.assujettiTVA, client.type === 'pro'),
-    numeroSeq: seq,
-    numero: doc.numero || formatNumero(prefixeFor(doc.type, profile), annee, seq),
-    client: clientSnapshot(client),
-    statut: doc.type === 'facture' ? 'envoyee' : 'envoye',
-    updatedAt: new Date().toISOString(),
-  };
-  await db.documents.put(updated);
-  // Un avoir couvrant une facture jamais encaissée l'annule.
-  if (doc.type === 'avoir' && doc.avoirDe) {
-    const facture = await db.documents.get(doc.avoirDe);
-    const paye = (await db.paiements.where('factureId').equals(doc.avoirDe).toArray()).reduce((s, p) => s + p.montant, 0);
-    if (facture && paye <= 0.005 && updated.totalTTC >= facture.totalTTC - 0.005) {
-      await db.documents.update(doc.avoirDe, { statut: 'annulee', updatedAt: new Date().toISOString() });
+  if (!(await finalizationAllowed())) throw new Error('licence.required');
+  return db.transaction('rw', [db.documents, db.clients, db.paiements], async () => {
+    const stored = await db.documents.get(doc.id!);
+    if (!stored) throw new Error('doc.notSaved');
+    // Déjà finalisé entre-temps : on rend le document tel qu'il est, sans rien réécrire.
+    if (stored.statut !== 'brouillon') return normalizeDoc(stored);
+    // Le contenu vient de l'éditeur ; la numérotation, elle, ne se lit que dans la base.
+    const base: Doc = { ...doc, numero: stored.numero, numeroSeq: stored.numeroSeq };
+    if (!base.clientId) throw new Error('doc.noClient');
+    const client = await db.clients.get(base.clientId);
+    if (!client) throw new Error('doc.clientMissing');
+    const annee = yearOf(base.dateEmission);
+    const seq = base.numeroSeq > 0 ? base.numeroSeq : await nextSeq(base.type, annee);
+    const updated: Doc = {
+      ...base,
+      ...computeTotals(base, profile.assujettiTVA, client.type === 'pro'),
+      numeroSeq: seq,
+      numero: base.numero || formatNumero(prefixeFor(base.type, profile), annee, seq),
+      client: clientSnapshot(client),
+      emetteur: emetteurSnapshot(profile),
+      statut: base.type === 'facture' ? 'envoyee' : 'envoye',
+      updatedAt: new Date().toISOString(),
+    };
+    await db.documents.put(updated);
+    // Un avoir couvrant une facture jamais encaissée l'annule.
+    if (base.type === 'avoir' && base.avoirDe) {
+      const facture = await db.documents.get(base.avoirDe);
+      const paye = (await db.paiements.where('factureId').equals(base.avoirDe).toArray()).reduce((s, p) => s + p.montant, 0);
+      if (facture && paye <= 0.005 && updated.totalTTC >= facture.totalTTC - 0.005) {
+        await db.documents.update(base.avoirDe, { statut: 'annulee', updatedAt: new Date().toISOString() });
+      }
     }
-  }
-  return updated;
+    return updated;
+  });
 }
 
 export async function setStatut(id: number, statut: Statut): Promise<void> {
@@ -160,6 +215,8 @@ export async function dupliquer(doc: Doc, profile: Profile): Promise<number> {
   copy.objet = doc.objet;
   copy.activite = doc.activite;
   copy.langue = doc.langue;
+  copy.devise = doc.devise || profile.devise;
+  copy.adresseLivraison = doc.adresseLivraison ?? '';
   copy.lignes = doc.lignes.map((l) => ({ ...l, id: uid() }));
   copy.remise = doc.remise;
   copy.retenue = doc.retenue;
@@ -178,10 +235,20 @@ export async function factureDepuisDevis(devis: Doc, profile: Profile): Promise<
   f.retenue = devis.retenue;
   f.notes = devis.notes;
   f.devisId = devis.id ?? null;
-  f.bonCommande = devis.bonCommande;
-  const id = await saveDoc(f, profile);
-  if (devis.id) await db.documents.update(devis.id, { factureId: id, statut: 'accepte' });
-  return id;
+  f.bonCommande = devis.bonCommande ?? '';
+  // La facture reprend la devise et les mentions du devis accepté, même si le profil a changé depuis.
+  f.devise = devis.devise || profile.devise;
+  f.adresseLivraison = devis.adresseLivraison ?? '';
+  f.prestationDebut = devis.prestationDebut ?? '';
+  f.prestationFin = devis.prestationFin ?? '';
+  return db.transaction('rw', [db.documents, db.clients], async () => {
+    // Relu dans la transaction : deux clics ne créent pas deux factures pour le même devis.
+    const courant = devis.id ? await db.documents.get(devis.id) : undefined;
+    if (courant?.factureId && (await db.documents.get(courant.factureId))) return courant.factureId;
+    const id = await saveDoc(f, profile);
+    if (devis.id) await db.documents.update(devis.id, { factureId: id, statut: 'accepte' });
+    return id;
+  });
 }
 
 /** Crée un avoir (brouillon) reprenant les lignes d'une facture finalisée. */
@@ -197,9 +264,14 @@ export async function avoirDepuisFacture(facture: Doc, profile: Profile): Promis
   a.client = facture.client;
   a.avoirDe = facture.id ?? null;
   a.bonCommande = facture.bonCommande ?? '';
-  const id = await saveDoc(a, profile);
-  if (facture.id) await db.documents.update(facture.id, { avoirId: id });
-  return id;
+  return db.transaction('rw', [db.documents, db.clients], async () => {
+    // Relu dans la transaction : deux clics ne créent pas deux avoirs pour la même facture.
+    const courante = facture.id ? await db.documents.get(facture.id) : undefined;
+    if (courante?.avoirId && (await db.documents.get(courante.avoirId))) return courante.avoirId;
+    const id = await saveDoc(a, profile);
+    if (facture.id) await db.documents.update(facture.id, { avoirId: id });
+    return id;
+  });
 }
 
 export async function supprimerDoc(doc: Doc): Promise<void> {

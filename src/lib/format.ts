@@ -102,14 +102,48 @@ export function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-/** Convertit une saisie utilisateur ("1 200,50" ou "1,200.50") en nombre. */
-export function parseNum(s: string): number {
-  let cleaned = s.replace(/\s/g, '');
-  if (cleaned.includes(',') && cleaned.includes('.')) {
+const sepCache = new Map<string, { decimal: string; group: string }>();
+
+/** Séparateurs décimal et de milliers d'une locale (« , » et espace en français, « . » et « , » en anglais…). */
+export function separators(locale = state.locale): { decimal: string; group: string } {
+  let s = sepCache.get(locale);
+  if (!s) {
+    let parts: Intl.NumberFormatPart[] = [];
+    try {
+      parts = new Intl.NumberFormat(locale, { useGrouping: true }).formatToParts(1234567.5);
+    } catch {
+      /* locale inconnue : conventions françaises */
+    }
+    s = { decimal: parts.find((p) => p.type === 'decimal')?.value ?? ',', group: parts.find((p) => p.type === 'group')?.value ?? ' ' };
+    sepCache.set(locale, s);
+  }
+  return s;
+}
+
+/** Nombre tel qu'il s'affiche dans un champ de saisie : sans milliers, avec le séparateur décimal de la locale. */
+export function fmtInput(n: number, locale = state.locale): string {
+  return Number.isFinite(n) ? String(n).replace('.', separators(locale).decimal) : '';
+}
+
+/**
+ * Convertit une saisie utilisateur en nombre : "1 200,50", "1,200.50", "1.200,50", "1'200.50".
+ * Un séparateur seul suivi de trois chiffres ("1.200", "1,200") se lit comme des milliers dans les
+ * locales où ce signe groupe les milliers, comme une décimale ailleurs.
+ */
+export function parseNum(s: string, locale = state.locale): number {
+  // Espaces (y compris insécables) et apostrophes servent de séparateurs de milliers.
+  let cleaned = s.replace(/[\s'’]/g, '');
+  const comma = cleaned.includes(',');
+  const dot = cleaned.includes('.');
+  if (comma && dot) {
     // Le dernier séparateur est le séparateur décimal.
     cleaned = cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.') ? cleaned.replace(/\./g, '').replace(',', '.') : cleaned.replace(/,/g, '');
-  } else {
-    cleaned = cleaned.replace(',', '.');
+  } else if (comma || dot) {
+    const sep = comma ? ',' : '.';
+    const parts = cleaned.split(sep);
+    const { decimal, group } = separators(locale);
+    const milliers = parts.length > 2 || (group === sep && decimal !== sep && /^-?[1-9]\d{0,2}$/.test(parts[0]) && /^\d{3}$/.test(parts[1]));
+    cleaned = milliers ? parts.join('') : parts.join('.');
   }
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : 0;

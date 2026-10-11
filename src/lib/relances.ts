@@ -27,7 +27,10 @@ export function relanceMailto(doc: Doc, profile: Profile, regime: Regime, reste:
   const retardMention = L(regime.mentions.retard, lang);
   if (doc.client?.type === 'pro' && retard > 0 && retardMention) lignes.push(tIn(lang, 'relance.penalties'), '');
   lignes.push(tIn(lang, 'relance.regards'), emetteur);
-  const to = doc.client?.email ?? '';
+  // L'adresse n'est reprise que si elle a la forme d'une adresse : tout autre contenu (venu par exemple
+  // d'une sauvegarde importée) pourrait ajouter des destinataires ou des champs au message.
+  const email = (doc.client?.email ?? '').trim();
+  const to = /^[^\s@?&#%,;:<>"]+@[^\s@?&#%,;:<>"]+\.[^\s@?&#%,;:<>"]+$/.test(email) ? email : '';
   return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(lignes.join('\n'))}`;
 }
 

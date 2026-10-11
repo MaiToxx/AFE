@@ -68,12 +68,48 @@ function publicKey(): Promise<CryptoKey> {
   return publicKeyPromise;
 }
 
-export async function verifyKey(raw: string): Promise<{ ok: true; payload: LicensePayload } | { ok: false; reasonKey: string }> {
-  const parsed = parseKey(raw);
-  if ('errorKey' in parsed) return { ok: false, reasonKey: parsed.errorKey };
-  if (!globalThis.crypto?.subtle) return { ok: false, reasonKey: 'licence.err.insecure' };
-  const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, await publicKey(), parsed.sig, parsed.data);
-  return ok ? { ok: true, payload: parsed.payload } : { ok: false, reasonKey: 'licence.err.signature' };
+export type KeyCheck = { ok: true; payload: LicensePayload } | { ok: false; reasonKey: string };
+
+// La même clé est revérifiée à chaque changement de réglage, par chaque écran : le dernier résultat est gardé.
+let lastCheck: { raw: string; result: Promise<KeyCheck> } | null = null;
+
+export function verifyKey(raw: string): Promise<KeyCheck> {
+  if (lastCheck?.raw === raw) return lastCheck.result;
+  const result = (async (): Promise<KeyCheck> => {
+    const parsed = parseKey(raw);
+    if ('errorKey' in parsed) return { ok: false, reasonKey: parsed.errorKey };
+    if (!globalThis.crypto?.subtle) return { ok: false, reasonKey: 'licence.err.insecure' };
+    const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, await publicKey(), parsed.sig, parsed.data);
+    return ok ? { ok: true, payload: parsed.payload } : { ok: false, reasonKey: 'licence.err.signature' };
+  })();
+  lastCheck = { raw, result };
+  // Un échec technique (et non un refus) ne doit pas rester en mémoire.
+  result.catch(() => {
+    if (lastCheck?.result === result) lastCheck = null;
+  });
+  return result;
+}
+
+/** La plus tardive des dates ISO fournies ; les valeurs absentes ou mal formées sont ignorées. */
+export function latestDate(...dates: (string | null | undefined)[]): string {
+  let max = '';
+  for (const d of dates) {
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d > max) max = d;
+  }
+  return max;
+}
+
+// Veille de la compilation : la date réelle ne peut pas lui être antérieure, quel que soit le fuseau.
+const BUILD_DAY = typeof __BUILD_DATE__ === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(__BUILD_DATE__) ? addDays(__BUILD_DATE__, -1) : '';
+
+/**
+ * Date du jour retenue pour les contrôles de licence. L'horloge de l'ordinateur peut être reculée :
+ * la date n'est donc jamais prise antérieure à la compilation de cette version, ni à la signature de
+ * la dernière liste de révocations reçue, deux repères que l'utilisateur ne peut pas modifier.
+ */
+export function soundToday(listIssued?: string | null, today = todayISO()): string {
+  const liste = typeof listIssued === 'string' && listIssued.length >= 10 ? addDays(listIssued.slice(0, 10), -1) : '';
+  return latestDate(today, BUILD_DAY, liste);
 }
 
 /**

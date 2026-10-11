@@ -11,6 +11,12 @@ const MARQUE = /^e1-([0-9a-z]{1,6})-([0-9a-z]{3})$/;
 /** Emplacements externes tenus à jour par la version bureau (registre, fichier commun à la machine). */
 const EMPLACEMENTS = 2;
 
+/**
+ * Réglage local : plus haute date observée par cette installation. L'essai se décompte depuis elle
+ * si l'horloge de l'ordinateur est ensuite reculée.
+ */
+export const SETTING_TRIAL_SEEN = 'trialSeen';
+
 /** Numéro du jour depuis le 1er janvier 2000, ou null si la date n'existe pas. */
 function dayNumber(iso: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;

@@ -6,6 +6,7 @@ import { useI18n } from '../i18n';
 import { isValidISO, todayISO, yearOf } from '../lib/dates';
 import { ventiler } from '../lib/depenses';
 import { fmtMoney } from '../lib/format';
+import { useGuard } from '../lib/useGuard';
 import { paramsFor } from '../regimes/engine';
 import { Check, Field, Icon, Modal, NumInput } from './ui';
 
@@ -43,6 +44,7 @@ export default function DepenseForm({ open, depense, onClose }: Props) {
 
   const [form, setForm] = useState<Depense>(vierge);
   const [error, setError] = useState('');
+  const [busy, guard] = useGuard();
 
   useEffect(() => {
     if (open) {
@@ -84,7 +86,7 @@ export default function DepenseForm({ open, depense, onClose }: Props) {
       footer={
         <>
           <button type="button" className="btn" onClick={onClose}>{t('common.cancel')}</button>
-          <button type="button" className="btn primary" onClick={save}>
+          <button type="button" className="btn primary" onClick={() => void guard(save)} disabled={busy}>
             <Icon name="check" /> {t('common.save')}
           </button>
         </>

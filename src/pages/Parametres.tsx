@@ -310,6 +310,10 @@ function FacturationTab({ form, set, regime }: { form: Profile; set: (p: Partial
 
   function onLogo(file: File | undefined) {
     if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setLogoError(t('settings.logoNotImage'));
+      return;
+    }
     if (file.size > 600_000) {
       setLogoError(t('settings.logoTooBig'));
       return;
@@ -489,7 +493,8 @@ function DonneesTab() {
       await importBackup(await file.text());
       setMsg({ text: t('settings.importDone') });
     } catch (e) {
-      setMsg({ tone: 'critical', text: e instanceof Error && e.message === 'backup.invalid' ? t('settings.backupInvalid') : t('settings.importFailed') });
+      const code = e instanceof Error ? e.message : '';
+      setMsg({ tone: 'critical', text: code === 'backup.invalid' ? t('settings.backupInvalid') : code === 'backup.newer' ? t('settings.backupNewer') : t('settings.importFailed') });
     }
     if (fileRef.current) fileRef.current.value = '';
   }

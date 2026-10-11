@@ -6,6 +6,7 @@ import { useI18n } from '../i18n';
 import { computeTotals } from '../lib/documents';
 import { fmtDate, fmtMoney } from '../lib/format';
 import { FREQUENCES, genererOccurrence } from '../lib/recurrences';
+import { useGuard } from '../lib/useGuard';
 import { Badge, Empty, Icon } from './ui';
 
 /** Gestion des modèles de factures récurrentes. */
@@ -15,11 +16,13 @@ export default function RecurrencesList() {
   const clients = useClients();
   const { profile } = useProfile();
   const navigate = useNavigate();
+  const [busy, guard] = useGuard();
   const clientName = (id: number | null) => clients.find((c) => c.id === id)?.nom ?? '—';
 
   async function generer(r: Recurrence) {
+    // null : cette occurrence vient d'être générée ailleurs (autre fenêtre) ; la liste se met à jour seule.
     const id = await genererOccurrence(r, profile);
-    navigate(`/documents/${id}`);
+    if (id !== null) navigate(`/documents/${id}`);
   }
 
   async function supprimer(r: Recurrence) {
@@ -71,7 +74,7 @@ export default function RecurrencesList() {
                 </td>
                 <td>
                   <div className="row-actions">
-                    <button type="button" className="btn ghost sm" onClick={() => generer(r)} title={t('recurrence.generateTitle', { date: fmtDate(r.prochaine) })}>
+                    <button type="button" className="btn ghost sm" onClick={() => void guard(() => generer(r))} disabled={busy} title={t('recurrence.generateTitle', { date: fmtDate(r.prochaine) })}>
                       <Icon name="plus" size={15} /> {t('recurrence.generate')}
                     </button>
                     <button type="button" className="btn danger sm icon" onClick={() => supprimer(r)} aria-label={t('common.delete')}><Icon name="trash" size={15} /></button>

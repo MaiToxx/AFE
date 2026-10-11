@@ -1,5 +1,7 @@
 mod essai;
 
+use tauri::Manager;
+
 /// Marques du début de la période d'essai conservées hors du dossier de l'application.
 #[tauri::command]
 fn marques_essai_lire() -> Vec<String> {
@@ -15,6 +17,15 @@ fn marques_essai_ecrire(marque: String) -> u8 {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Une seule instance : un second lancement ramène la fenêtre déjà ouverte au premier plan. Deux
+        // fenêtres sur la même base pourraient générer deux fois les factures récurrentes ou se
+        // disputer la sauvegarde automatique.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(fenetre) = app.get_webview_window("main") {
+                let _ = fenetre.unminimize();
+                let _ = fenetre.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())

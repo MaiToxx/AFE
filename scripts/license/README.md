@@ -133,7 +133,12 @@ de 30 jours.
   à partir de l'autre. Restaurer une sauvegarde ne repousse pas non plus le début de l'essai. La
   valeur consignée est une date encodée, sans aucune donnée personnelle.
 - Sans licence ensuite : consultation, export et PDF des documents existants restent possibles ;
-  la **finalisation** de nouveaux devis/factures est bloquée jusqu'à activation.
+  la **finalisation** de nouveaux devis/factures est bloquée jusqu'à activation. Le contrôle est
+  fait au moment où le numéro du document est attribué (`src/lib/licenseGate.ts`), pas seulement
+  par les écrans : il vaut aussi pour les factures récurrentes finalisées automatiquement.
+- **Horloge reculée.** L'essai se décompte depuis la plus haute date que l'application a observée.
+  Pour une licence, la date du jour n'est jamais prise antérieure à la compilation de la version
+  installée ni à la signature de la dernière liste de révocations reçue.
 - Licence expirée (abonnement), révoquée, non vérifiée en ligne depuis plus de 30 jours ou
   version non couverte (`maxMajor`) : même comportement.
 - La licence est incluse dans les sauvegardes JSON : le client la retrouve en changeant de machine.
@@ -144,7 +149,10 @@ de 30 jours.
   fois la valeur du registre, le fichier de `%PROGRAMDATA%` et les données de l'application repart
   de zéro. Dans la version web, effacer les données du site suffit : un navigateur ne permet pas
   de conserver la date ailleurs.
-- Reculer l'horloge de l'ordinateur prolonge l'essai et le délai hors connexion.
+- Une horloge reculée en permanence, avant chaque lancement, échappe encore au décompte de l'essai.
+- Le code source est public : une personne capable de le compiler peut en retirer les contrôles.
+  Rendre le dépôt privé demande de publier ailleurs les versions et la liste des révocations, que
+  les applications installées téléchargent depuis ce dépôt.
 - Une clé peut être partagée entre plusieurs personnes ; la révoquer la désactive partout. Limiter
   le nombre de machines par clé demanderait une activation en ligne, donc un petit serveur.
 - Une clé émise avant la publication de la version 0.4.2 reste utilisable, même révoquée, sur une
