@@ -426,6 +426,14 @@ function FacturationTab({ form, set, regime }: { form: Profile; set: (p: Partial
         </Field>
         <p className="small muted">{t('settings.autoMentions')}</p>
       </div>
+      <div className="form-section">
+        <h3>{t('settings.terms')}</h3>
+        <Field label={t('settings.termsText')} help={t('settings.termsHelp')}>
+          <textarea value={form.cgv} onChange={(e) => set({ cgv: e.target.value })} rows={8} />
+        </Field>
+        <Check label={t('settings.termsOnQuotes')} checked={form.cgvDevis} onChange={(cgvDevis) => set({ cgvDevis })} />
+        <Check label={t('settings.termsOnInvoices')} checked={form.cgvFacture} onChange={(cgvFacture) => set({ cgvFacture })} />
+      </div>
     </div>
   );
 }

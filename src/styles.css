@@ -454,6 +454,12 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
 .sheet .signature { margin-top: 18px; display: flex; justify-content: flex-end; }
 .sheet .signature div { width: 230px; border: 1px dashed #bbb; padding: 8px 10px 48px; font-size: 8.5pt; color: #666; }
 
+/* Conditions générales : feuille annexe, toujours claire, qui peut courir sur plusieurs pages. */
+.sheet.sheet-cgv { margin-top: 24px; min-height: 0; font-size: 8.6pt; line-height: 1.45; display: block; }
+.sheet-cgv h2 { font-size: 13pt; color: var(--doc-accent); margin: 0 0 2px; }
+.sheet-cgv .cgv-ref { font-size: 8pt; color: #666; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #ddd; }
+.sheet-cgv .cgv-texte { white-space: pre-wrap; overflow-wrap: anywhere; }
+
 @media screen and (max-width: 900px) { .sheet { zoom: 0.85; } }
 @media screen and (max-width: 760px) { .sheet { zoom: 0.7; } }
 @media screen and (max-width: 620px) { .sheet { zoom: 0.55; } }
@@ -470,6 +476,9 @@ dialog.modal::backdrop { background: rgba(0, 0, 0, 0.4); }
   .print-stage { padding: 0; background: #fff; min-height: 0; }
   /* 296 mm (et non 297) : évite une seconde page blanche due aux arrondis du moteur d'impression. */
   .sheet { box-shadow: none; margin: 0; width: auto; min-height: 296mm; page-break-after: avoid; }
+  /* Les marges viennent de la page nommée : elles sont ainsi respectées à chaque saut de page. */
+  @page cgv { size: A4; margin: 16mm 18mm; }
+  .sheet.sheet-cgv { page: cgv; break-before: page; min-height: 0; padding: 0; margin: 0; }
 }
 
 /* ---------- Liste à barres (top clients) ---------- */

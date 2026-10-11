@@ -151,7 +151,13 @@ export async function nextSeq(type: DocType, annee: number, regles?: Pick<Profil
 }
 
 /** Émetteur à figer dans un document au moment où il est émis. */
-export function emetteurSnapshot(p: Profile): EmetteurSnapshot {
+/** Conditions générales à joindre à un document de ce type, d'après le profil ('' si aucune). */
+export function cgvPour(type: Doc['type'], p: Pick<Profile, 'cgv' | 'cgvDevis' | 'cgvFacture'>): string {
+  const texte = (p.cgv ?? '').trim();
+  return (type === 'devis' && p.cgvDevis) || (type === 'facture' && p.cgvFacture) ? texte : '';
+}
+
+export function emetteurSnapshot(p: Profile, type: Doc['type']): EmetteurSnapshot {
   return {
     denomination: p.denomination,
     prenom: p.prenom,
@@ -172,6 +178,7 @@ export function emetteurSnapshot(p: Profile): EmetteurSnapshot {
     mentionsPied: p.mentionsPied,
     iban: p.iban,
     bic: p.bic,
+    cgv: cgvPour(type, p),
   };
 }
 
@@ -242,7 +249,7 @@ export async function finaliser(doc: Doc, profile: Profile): Promise<Doc> {
       numeroSeq: seq,
       numero,
       client: clientSnapshot(client),
-      emetteur: emetteurSnapshot(profile),
+      emetteur: emetteurSnapshot(profile, base.type),
       statut: base.type === 'facture' ? 'envoyee' : 'envoye',
       updatedAt: new Date().toISOString(),
     };

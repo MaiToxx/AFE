@@ -7,7 +7,7 @@ import { db } from '../db/db';
 import { useClients, usePaiements, useProfile, useRegime } from '../db/hooks';
 import type { ClientSnapshot } from '../db/types';
 import { tIn, useI18n, type Lang } from '../i18n';
-import { ligneTotalHT, montantPaye, montantRemise, normalizeDoc, profilDuDocument, sousTotal, ventilationTaxe } from '../lib/documents';
+import { cgvPour, ligneTotalHT, montantPaye, montantRemise, normalizeDoc, profilDuDocument, sousTotal, ventilationTaxe } from '../lib/documents';
 import { fmtDate, fmtMoneyIn, fmtNum, round2 } from '../lib/format';
 import { epcPayload } from '../lib/sepa';
 import { L, getRegime, identifiantPrincipal, identifiantsPied, localeFor } from '../regimes';
@@ -77,6 +77,8 @@ export default function DocumentPrint() {
   const parTaux = profile.assujettiTVA ? ventilationTaxe(doc) : [];
   const emetteur = profile.denomination || `${profile.prenom} ${profile.nom}`.trim() || tl('print.yourName');
   const proClient = client?.type === 'pro';
+  // Conditions générales : celles en vigueur à l'émission pour un document émis, celles du profil pour un brouillon.
+  const cgv = doc.statut !== 'brouillon' && doc.emetteur ? (doc.emetteur.cgv ?? '') : cgvPour(doc.type, profilActuel);
   // QR code de virement SEPA : facture en euros restant à régler, IBAN valide, option activée.
   const qr =
     isFacture && profile.qrPaiement && devise === 'EUR' && doc.statut !== 'annulee' && doc.statut !== 'payee'
@@ -305,6 +307,13 @@ export default function DocumentPrint() {
           {mentionPied && <div className="pays">{mentionPied}</div>}
         </footer>
       </article>
+      {cgv && (
+        <article className="sheet sheet-cgv" style={{ ['--doc-accent' as string]: profile.couleur || '#2a78d6' }} lang={lang}>
+          <h2>{tl('print.generalTerms')}</h2>
+          <div className="cgv-ref">{[titre, doc.numero, emetteur].filter(Boolean).join(' · ')}</div>
+          <div className="cgv-texte">{cgv}</div>
+        </article>
+      )}
     </div>
   );
 }

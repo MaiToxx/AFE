@@ -154,6 +154,8 @@ export interface EmetteurSnapshot {
   mentionsPied: string;
   iban: string;
   bic: string;
+  /** Conditions générales jointes à ce document lors de son émission ('' si aucune ; absent avant la version 0.5). */
+  cgv?: string;
 }
 
 export interface Doc {
