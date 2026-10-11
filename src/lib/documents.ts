@@ -112,7 +112,7 @@ export function newDoc(type: DocType, profile: Profile, clientId: number | null 
     lignes: [newLigne(profile.tauxTVA)],
     remise: 0,
     retenue: profile.retenueSource || 0,
-    notes: '',
+    notes: (type === 'devis' ? profile.notesDevis : type === 'facture' ? profile.notesFacture : '') ?? '',
     devisId: null,
     factureId: null,
     totalHT: 0,

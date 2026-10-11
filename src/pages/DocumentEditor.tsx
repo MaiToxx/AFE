@@ -209,6 +209,14 @@ export default function DocumentEditor() {
   const updateLigne = (lid: string, patch: Partial<Ligne>) => update({ lignes: doc.lignes.map((l) => (l.id === lid ? { ...l, ...patch } : l)) });
   const removeLigne = (lid: string) => update({ lignes: doc.lignes.filter((l) => l.id !== lid) });
   const addLigne = () => update({ lignes: [...doc.lignes, newLigne(profile.tauxTVA)] });
+  const moveLigne = (lid: string, sens: -1 | 1) => {
+    const i = doc.lignes.findIndex((l) => l.id === lid);
+    const j = i + sens;
+    if (i < 0 || j < 0 || j >= doc.lignes.length) return;
+    const lignes = [...doc.lignes];
+    [lignes[i], lignes[j]] = [lignes[j], lignes[i]];
+    update({ lignes });
+  };
   const addFromCatalogue = (p: Prestation) => {
     const ligne: Ligne = { ...newLigne(profile.tauxTVA), description: p.description || p.libelle, unite: p.unite, prixUnitaire: p.prixUnitaire, tauxTVA: p.tauxTVA };
     const seuleLigneVide = doc.lignes.length === 1 && !doc.lignes[0].description.trim() && !doc.lignes[0].prixUnitaire;
@@ -556,6 +564,16 @@ export default function DocumentEditor() {
                       <td className="total">{fmtMoney(ligneTotalHT(l))}</td>
                       {!locked && (
                         <td className="nowrap">
+                          {doc.lignes.length > 1 && (
+                            <>
+                              <button type="button" className="btn ghost sm icon" onClick={() => moveLigne(l.id, -1)} aria-label={t('editor.moveUp')} title={t('editor.moveUp')} disabled={doc.lignes[0].id === l.id}>
+                                <Icon name="up" size={15} />
+                              </button>
+                              <button type="button" className="btn ghost sm icon" onClick={() => moveLigne(l.id, 1)} aria-label={t('editor.moveDown')} title={t('editor.moveDown')} disabled={doc.lignes[doc.lignes.length - 1].id === l.id}>
+                                <Icon name="down" size={15} />
+                              </button>
+                            </>
+                          )}
                           <button type="button" className="btn ghost sm icon" onClick={() => addToCatalogue(l)} aria-label={t('editor.addToCatalogue')} title={t('editor.addToCatalogue')} disabled={!l.description.trim()}>
                             <Icon name="table" size={15} />
                           </button>

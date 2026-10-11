@@ -427,6 +427,16 @@ function FacturationTab({ form, set, regime }: { form: Profile; set: (p: Partial
         <p className="small muted">{t('settings.autoMentions')}</p>
       </div>
       <div className="form-section">
+        <h3>{t('settings.defaultNotes')}</h3>
+        <p className="small text-2" style={{ margin: '4px 0 12px' }}>{t('settings.defaultNotesHelp')}</p>
+        <Field label={t('settings.defaultNotesQuote')}>
+          <textarea value={form.notesDevis ?? ''} onChange={(e) => set({ notesDevis: e.target.value })} rows={3} />
+        </Field>
+        <Field label={t('settings.defaultNotesInvoice')}>
+          <textarea value={form.notesFacture ?? ''} onChange={(e) => set({ notesFacture: e.target.value })} rows={3} />
+        </Field>
+      </div>
+      <div className="form-section">
         <h3>{t('settings.terms')}</h3>
         <Field label={t('settings.termsText')} help={t('settings.termsHelp')}>
           <textarea value={form.cgv} onChange={(e) => set({ cgv: e.target.value })} rows={8} />

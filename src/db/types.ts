@@ -78,6 +78,9 @@ export interface Profile {
   /** Afficher un QR code de virement SEPA sur les factures en euros (IBAN requis). */
   qrPaiement: boolean;
   /** Conditions générales, imprimées sur une page à part à la suite des documents choisis. */
+  /** Notes reprises dans chaque nouveau devis / chaque nouvelle facture (absentes avant la version 0.5.2). */
+  notesDevis?: string;
+  notesFacture?: string;
   cgv: string;
   cgvDevis: boolean;
   cgvFacture: boolean;
