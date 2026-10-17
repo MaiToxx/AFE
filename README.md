@@ -1,4 +1,4 @@
-# AFE — Facturation et cotisations pour indépendants
+# AFE : facturation et cotisations pour indépendants
 
 Ce dépôt distribue l'application AFE pour Windows.
 
